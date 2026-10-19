@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Splash-screen icon (system SplashScreen API). Same mark, no background:
+     the window background already supplies the black. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M54,30 A24,24 0 1 1 53.99,30 Z M54,34.5 A19.5,19.5 0 1 0 54.01,34.5 Z"
+        android:fillColor="#4FD8A6" />
+    <path
+        android:pathData="M54,14 L54,24 M54,84 L54,94 M14,54 L24,54 M84,54 L94,54"
+        android:strokeColor="#4FD8A6"
+        android:strokeWidth="4"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M54,47 A7,7 0 1 1 53.99,47 Z"
+        android:fillColor="#F2F2F2" />
+</vector>

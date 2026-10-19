@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Deliberately near-empty: identity, Home-role status, recon status, tiny controls.
+     Root is a FrameLayout so the first-run overlay can cover the whole window without
+     fighting the content layout, and so window insets can be applied as root padding. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/opti_black"
+    android:clipToPadding="false">
+
+    <LinearLayout
+        android:id="@+id/content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:paddingLeft="20dp"
+        android:paddingRight="20dp"
+        android:paddingTop="18dp"
+        android:paddingBottom="12dp">
+
+        <TextView
+            android:id="@+id/titleText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textColor="@color/opti_white"
+            android:textSize="18sp"
+            android:letterSpacing="0.12" />
+
+        <TextView
+            android:id="@+id/subtitleText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="@string/subtitle"
+            android:textColor="@color/opti_accent"
+            android:textSize="11sp"
+            android:letterSpacing="0.18"
+            android:fontFamily="monospace" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="14dp"
+            android:background="@color/opti_line" />
+
+        <TextView
+            android:id="@+id/homeStatusText"
+            style="@style/OptiLabel"
+            android:text="@string/home_role_unchecked"
+            android:textColor="@color/opti_white" />
+
+        <TextView
+            android:id="@+id/reconStatusText"
+            style="@style/OptiLabel"
+            android:layout_marginTop="4dp"
+            android:text="@string/recon_idle" />
+
+        <ScrollView
+            android:id="@+id/reportScroll"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="12dp"
+            android:visibility="gone"
+            android:fadeScrollbars="false">
+
+            <TextView
+                android:id="@+id/reportText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/report_unavailable"
+                android:textColor="@color/opti_dim"
+                android:textSize="10sp"
+                android:lineSpacingExtra="2dp"
+                android:fontFamily="monospace" />
+        </ScrollView>
+
+        <LinearLayout
+            android:id="@+id/controls"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <Button
+                android:id="@+id/btnScan"
+                style="@style/OptiButton"
+                android:text="@string/btn_scan" />
+
+            <Button
+                android:id="@+id/btnView"
+                style="@style/OptiButton"
+                android:layout_marginStart="8dp"
+                android:text="@string/btn_view_report" />
+
+            <Button
+                android:id="@+id/btnCopy"
+                style="@style/OptiButton"
+                android:layout_marginStart="8dp"
+                android:text="@string/btn_copy" />
+
+            <Button
+                android:id="@+id/btnShare"
+                style="@style/OptiButton"
+                android:layout_marginStart="8dp"
+                android:text="@string/btn_share" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnHomeRole"
+            style="@style/OptiButton"
+            android:layout_width="match_parent"
+            android:layout_marginTop="8dp"
+            android:text="@string/btn_home_role" />
+
+        <TextView
+            android:id="@+id/footerText"
+            style="@style/OptiLabel"
+            android:layout_marginTop="10dp"
+            android:textSize="10sp"
+            android:textColor="@color/opti_line" />
+    </LinearLayout>
+
+    <!-- First-run animation host: covers the window, plays exactly once. -->
+    <FrameLayout
+        android:id="@+id/firstRunOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/opti_black"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/firstRunMark"
+            android:layout_width="132dp"
+            android:layout_height="132dp"
+            android:layout_gravity="center"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_splash" />
+
+        <TextView
+            android:id="@+id/firstRunLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginTop="220dp"
+            android:text="@string/app_name"
+            android:textColor="@color/opti_white"
+            android:textSize="14sp"
+            android:letterSpacing="0.3"
+            android:fontFamily="monospace"
+            android:alpha="0" />
+    </FrameLayout>
+</FrameLayout>

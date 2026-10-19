@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NoBlooks</string>
+    <string name="subtitle">WALLPAPER-FIRST LAUNCHER</string>
+
+    <string name="home_role_unchecked">HOME ROLE: checking…</string>
+    <string name="recon_idle">RECON: idle</string>
+
+    <string name="btn_scan">SCAN</string>
+    <string name="btn_copy">COPY</string>
+    <string name="btn_share">SHARE</string>
+    <string name="btn_home_role">HOME ROLE</string>
+    <string name="btn_view_report">VIEW</string>
+
+    <string name="clipboard_label">NoBlooks diagnostics report</string>
+    <string name="share_title">Share diagnostics report</string>
+    <string name="report_unavailable">No report yet — run SCAN.</string>
+</resources>

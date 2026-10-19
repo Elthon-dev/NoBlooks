@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- System splash (Android 12+ SplashScreen API), applied before the home theme
+         via postSplashScreenTheme. Kept black so the splash never flashes a color the
+         wallpaper cannot match; it hands over to a transparent, wallpaper-showing
+         window as soon as the activity is created. -->
+    <style name="Theme.OptiLauncher.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/opti_black</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
+        <item name="windowSplashScreenAnimationDuration">400</item>
+        <item name="postSplashScreenTheme">@style/Theme.OptiLauncher</item>
+    </style>
+
+    <!--
+      The home window itself: transparent background + FLAG_SHOW_WALLPAPER
+      (windowShowWallpaper) so the real system wallpaper is composited behind the
+      launcher. Nothing here paints an opaque sheet over the wallpaper — every
+      surface in the Compose UI is drawn as a translucent layer on top of it.
+
+      statusBarColor/navigationBarColor are deprecated when targeting SDK 35
+      (edge-to-edge is enforced); they are kept for older devices and the real inset
+      handling happens in code.
+    -->
+    <style name="Theme.OptiLauncher" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowShowWallpaper">true</item>
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:colorBackground">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+    </style>
+
+    <!-- Kept so the preserved XML shell layout (activity_main.xml) still resolves
+         its styles even though the Compose home screen supersedes it. -->
+    <style name="OptiButton">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:paddingLeft">14dp</item>
+        <item name="android:paddingRight">14dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/opti_black</item>
+        <item name="android:backgroundTint">@color/opti_accent</item>
+        <item name="android:singleLine">true</item>
+    </style>
+
+    <!-- Monochrome text/label styles kept for the XML shell remnants and any
+         framework-rendered text (toasts, splash). -->
+    <style name="OptiLabel">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:lineSpacingExtra">3dp</item>
+        <item name="android:textColor">@color/opti_dim</item>
+        <item name="android:fontFamily">monospace</item>
+    </style>
+</resources>

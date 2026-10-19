@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="opti_black">#000000</color>
+    <color name="opti_white">#F2F2F2</color>
+    <color name="opti_dim">#8A8A8A</color>
+    <color name="opti_line">#2A2A2A</color>
+    <color name="opti_accent">#4FD8A6</color>
+    <color name="opti_warn">#E8B44A</color>
+    <color name="opti_error">#E86A5A</color>
+    <color name="opti_icon_background">#05100C</color>
+</resources>

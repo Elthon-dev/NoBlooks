@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Package visibility: NoBlooks only asks to see apps that expose a launcher entry
+      point (MAIN + LAUNCHER) and other home candidates (MAIN + HOME).
+      QUERY_ALL_PACKAGES is deliberately NOT declared.
+
+      PACKAGE_USAGE_STATS: declaring it is what makes the "Usage access" toggle in
+      Android settings apply to this app at all. It is never granted automatically;
+      the habit page explains and opens the settings screen. No data ever leaves the
+      device.
+
+      RECORD_AUDIO: used ONLY by the user-initiated microphone level check on the
+      Settings page. It is never requested at startup, there is no background
+      recording, and no foreground service is started.
+
+      No network, storage, accessibility, or overlay permissions.
+    -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+        <!-- Wallpaper picker + the settings screens the UI can open on a tap. -->
+        <intent>
+            <action android:name="android.intent.action.SET_WALLPAPER" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.USAGE_ACCESS_SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.HOME_SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.APPLICATION_DETAILS_SETTINGS" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.OptiLauncher"
+        android:hasCode="true">
+
+        <!--
+          The genuine Home activity. MAIN + HOME + DEFAULT makes the app eligible for
+          Android's default Home selection; LAUNCHER lets it be opened from another
+          launcher too. rotation/recreation is survived, not avoided (no configChanges
+          swallowing), which is why the state holder is a ViewModel.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:enabled="true"
+            android:launchMode="singleTask"
+            android:clearTaskOnLaunch="true"
+            android:taskAffinity=""
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
+            android:enableOnBackInvokedCallback="true"
+            android:theme="@style/Theme.OptiLauncher.Starting">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
