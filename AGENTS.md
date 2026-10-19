@@ -8,8 +8,14 @@ and it is not the source of truth.
 
 The only verification loop is GitHub Actions:
 
-- Workflow: `.github/workflows/android.yml` (`testDebugUnitTest`, `lintDebug`, `assembleDebug`)
-- Artifact: `noblooks-debug-apk`
+- Workflow: `.github/workflows/android.yml` (`testDebugUnitTest`, `lintDebug`,
+  `assembleDebug`, `assembleRelease`)
+- Artifacts: `optilauncher-debug-apk` (installable, debuggable) and
+  `optilauncher-release-apk` (R8; **the one to judge smoothness with** — Compose runs
+  interpreted in debuggable builds). APK files are named `optilauncher-<variant>.apk`.
+- The debug keystore is restored from the Actions cache so repeated installs keep one
+  signature; the release variant is signed with that key only so CI can produce an
+  installable APK (not a Play Store signing setup).
 - So: make the change → commit → push → watch the run → fix → push again.
 
 Report build/test results as "CI run <url>: <conclusion>". Anything not covered by CI
@@ -37,14 +43,24 @@ called out as **unverified** rather than claimed as working.
 
 - Home screen = glance instrument (top-right) + floating island (middle of the left
   edge), one shared `NbDim.ScreenInset`, composited over the real wallpaper
-  (`FLAG_SHOW_WALLPAPER`, no splash theme, no opaque sheet, no title bar). The two are
-  diagonal on purpose so neither can cover the other at any screen height.
+  (`FLAG_SHOW_WALLPAPER`, no splash theme, no opaque sheet, no title bar). The collapsed
+  island is a **portrait capsule** (it lives on a side edge). The expanded panel has a
+  **fixed anchor**: directly under the measured instrument on phones, level with its top
+  edge on wide screens (≥680dp). The instrument reports its height so font-scale changes
+  cannot cause a collision.
+- Apps page is **habit-first**: with no query it shows usage-ranked habits plus pinned
+  favourites (falling back to the full list only when there is no history); typing
+  switches the grid to search over every app, pinned apps included. Enter launches the
+  best match. Launching clears the query. Back unwinds an active search before it
+  collapses the island.
 - Surfaces are **solid colour** with soft drop shadows for depth; no borders framing
   cards, no wallpaper bleed through panels.
-- Motion is fluid, never cartoony: only critically damped springs
-  (`Spring.DampingRatioNoBouncy`) or Material emphasized duration curves (`NbMotion`).
-  Under-damped springs are banned — overshoot is what reads as "cartoony". The island
-  morph keeps the pill's centre fixed so the silhouette grows out of it.
+- Motion is crisp, never cartoony: only critically damped springs
+  (`Spring.DampingRatioNoBouncy`) or short emphasized duration curves (`NbMotion`).
+  Under-damped springs are banned — overshoot is what reads as "cartoony". No decorative
+  choreography: content must be readable/tappable immediately (fades ≤140ms, no stagger,
+  no page slides). Behavior beats animation — when in doubt, cut the animation, not the
+  function. Predictive back is gesture-linked, never decorative.
 - Animated values are read in the layout/draw phase (`Modifier.layout`, `graphicsLayer`,
   Canvas lambdas), never during composition — a frame of animation must not recompose
   the island, its tabs, or the open page. Faces are mounted from discrete state.

@@ -78,8 +78,6 @@ import kotlin.math.sin
  * Tapping the card opens the island on the Apps page. It shares the island's
  * inset, corner rhythm and solid surface, so the two surfaces read as one set.
  */
-private val WidgetWidth = 252.dp
-
 @Composable
 fun GlanceWidget(
     modifier: Modifier = Modifier,
@@ -113,7 +111,7 @@ fun GlanceWidget(
 
     Column(
         modifier = modifier
-            .width(WidgetWidth)
+            .width(NbDim.InstrumentWidth)
             .shadow(
                 elevation = 18.dp,
                 shape = RoundedCornerShape(NbDim.WidgetCorner),

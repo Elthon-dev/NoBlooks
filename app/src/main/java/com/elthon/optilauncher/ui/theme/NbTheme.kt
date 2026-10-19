@@ -65,9 +65,9 @@ object NbDim {
     /** Left/right inset used by every surface drawn on the wallpaper. */
     val ScreenInset = 16.dp
 
-    /** Collapsed island pill. */
-    val PillWidth = 122.dp
-    val PillHeight = 48.dp
+    /** Collapsed island pill: a portrait capsule, because it lives on the side edge. */
+    val PillWidth = 54.dp
+    val PillHeight = 112.dp
     val PillIcon = 20.dp
     val PillTapTarget = 40.dp
 
@@ -85,6 +85,12 @@ object NbDim {
     /** Home widget card. */
     val WidgetCorner = 26.dp
     val WidgetPadding = 18.dp
+
+    /** Instrument slot: both home surfaces start from the same top inset. */
+    val WidgetTopInset = 18.dp
+    val InstrumentWidth = 252.dp
+    /** Breathing room between the instrument's bottom edge and the expanded panel. */
+    val InstrumentGap = 14.dp
 }
 
 /**
@@ -112,11 +118,11 @@ object NbMotion {
     val EmphasizedAccelerate: Easing = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
     val Standard: Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 
-    /** Silhouette opening: long, soft landing, zero bounce. */
-    val enterSpring: SpringSpec<Float> = SpringSpec(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow)
+    /** Silhouette opening: crisp, zero bounce. Long, soft landings read as lag. */
+    val enterSpring: SpringSpec<Float> = SpringSpec(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium)
 
-    /** Silhouette closing: same curve, a touch quicker to get out of the way. */
-    val exitSpring: SpringSpec<Float> = SpringSpec(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium)
+    /** Silhouette closing: quicker still, so the launcher is never held hostage. */
+    val exitSpring: SpringSpec<Float> = SpringSpec(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumHigh)
 
     /** Content settling inside a moving container. */
     val contentSpring: SpringSpec<Float> = SpringSpec(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium)

@@ -108,7 +108,9 @@ fun IslandState.reduce(event: IslandEvent): IslandState = when (event) {
         // Page switches are explicitly expansion-preserving.
         copy(page = event.page, expansion = expansion)
 
-    IslandEvent.AppLaunched -> collapse()
+    // A launch ends the search session too: reopening the island must show habits,
+    // not the query that happened to launch the app last time.
+    IslandEvent.AppLaunched -> collapse().copy(query = "")
 
     is IslandEvent.QueryChanged -> copy(query = event.value)
 

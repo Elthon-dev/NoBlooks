@@ -1,6 +1,6 @@
 package com.elthon.optilauncher.ui.island
 
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
@@ -14,8 +14,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -31,16 +29,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -53,6 +55,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
@@ -60,12 +63,12 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.elthon.optilauncher.core.island.Expansion
 import com.elthon.optilauncher.core.island.IslandEvent
 import com.elthon.optilauncher.core.island.IslandPage
 import com.elthon.optilauncher.core.island.IslandState
-import com.elthon.optilauncher.core.island.index
 import com.elthon.optilauncher.core.mic.MicIndicator
 import com.elthon.optilauncher.core.mic.MicState
 import com.elthon.optilauncher.ui.components.Glyph
@@ -78,17 +81,20 @@ import com.elthon.optilauncher.ui.theme.NbColors
 import com.elthon.optilauncher.ui.theme.NbDim
 import com.elthon.optilauncher.ui.theme.NbMotion
 import com.elthon.optilauncher.ui.theme.NbType
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 /**
- * The signature floating island — anchored at the middle of the left edge.
+ * The signature floating island — a portrait capsule anchored at the middle of
+ * the left edge.
  *
- * One component, two states: a compact pill that morphs into a panel. Because
- * the container is centred on its own left edge, the pill does not travel when
- * the panel opens: the silhouette grows outward from the pill's own centre, which
- * is what makes the morph read as one object changing shape rather than two
- * views swapping places.
+ * One component, two states: the capsule slides up and opens into a panel. The
+ * expanded panel has a *fixed* home: on phones it sits directly below the glance
+ * instrument, tucked against the same left inset; on wide screens it shares the
+ * instrument's top edge instead. Either way the silhouette ends up in the same
+ * spot every time, which is what makes the layout feel composed rather than
+ * wherever-the-content-ended up.
  *
  * Motion: every spec is either a critically damped spring (damping ratio 1.0 —
  * settles in the shortest time *without oscillating*) or a Material emphasized
@@ -120,6 +126,7 @@ fun FloatingIsland(
     mic: MicIndicator,
     reducedMotion: Boolean,
     message: String?,
+    instrumentHeightPx: Int,
     onEvent: (IslandEvent) -> Unit,
     onMicAction: () -> Unit,
     modifier: Modifier = Modifier,
@@ -128,8 +135,35 @@ fun FloatingIsland(
 ) {
     val colors = LocalNbColors.current
 
-    // Android Back collapses the island first; the launcher stays behind it.
-    BackHandler(enabled = state.isExpanded) { onEvent(IslandEvent.Back) }
+    // Android 13+ predictive back: the system hands us gesture progress, so the
+    // island can dip toward the edge *with* the gesture instead of waiting to be
+    // told the gesture finished. Held in a state object and only read in the draw
+    // phase, so a drag never recomposes the island.
+    val backPreview = remember { mutableFloatStateOf(0f) }
+    val keyboard = LocalSoftwareKeyboardController.current
+    PredictiveBackHandler(enabled = state.isExpanded) { progress ->
+        try {
+            progress.collect { backPreview.floatValue = it.progress }
+            // Back unwinds the innermost thing first: an active search, then the
+            // island. Closing the island out from under a typed query loses work.
+            if (state.page == IslandPage.APPS && state.query.isNotEmpty()) {
+                backPreview.floatValue = 0f
+                keyboard?.hide()
+                onEvent(IslandEvent.QueryChanged(""))
+            } else {
+                onEvent(IslandEvent.Back)
+            }
+        } catch (cancel: CancellationException) {
+            // Gesture cancelled: undo the preview and let the gesture owner keep going.
+            backPreview.floatValue = 0f
+            throw cancel
+        }
+    }
+    // Committed back collapses the island; the preview then fades out with the
+    // morph (it is multiplied by the size progress). Clear it on the next open.
+    LaunchedEffect(state.isExpanded) {
+        if (state.isExpanded) backPreview.floatValue = 0f
+    }
 
     BoxWithConstraints(modifier.fillMaxSize()) {
         val screenWidth = maxWidth
@@ -160,37 +194,47 @@ fun FloatingIsland(
                 .imePadding()
                 .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
         ) {
-            Column(
+            // The suggestion sits beside the capsule, not above it: with a portrait
+            // pill there is no room above it before the widget zone, and a caption
+            // next to the capsule keeps the island's anchor honest. It is anchored
+            // to the stage's vertical centre, which is exactly the pill's centre.
+            AnimatedVisibility(
+                visible = state.expansion == Expansion.COLLAPSED && suggestion != null,
                 modifier = Modifier
                     .align(Alignment.CenterStart)
-                    .padding(start = NbDim.ScreenInset),
-                horizontalAlignment = Alignment.Start,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .offset(x = NbDim.ScreenInset + NbDim.PillWidth + 12.dp)
+                    .widthIn(
+                        max = (screenWidth - NbDim.ScreenInset * 2 - NbDim.PillWidth - 12.dp)
+                            .coerceAtLeast(72.dp)
+                    ),
+                enter = fadeIn(tween(NbMotion.Short4, easing = NbMotion.EmphasizedDecelerate)) +
+                    expandVertically(
+                        animationSpec = tween(NbMotion.Medium2, easing = NbMotion.EmphasizedDecelerate),
+                        expandFrom = Alignment.CenterStart
+                    ),
+                exit = fadeOut(tween(140, easing = NbMotion.EmphasizedAccelerate)) +
+                    shrinkVertically(
+                        animationSpec = tween(NbMotion.Short4, easing = NbMotion.EmphasizedAccelerate),
+                        shrinkTowards = Alignment.CenterStart
+                    )
             ) {
-                // Offer only makes sense on the collapsed pill, and it animates
-                // its own height so it nudges the island instead of jumping it.
-                AnimatedVisibility(
-                    visible = state.expansion == Expansion.COLLAPSED && suggestion != null,
-                    enter = fadeIn(tween(NbMotion.Short4, easing = NbMotion.EmphasizedDecelerate)) +
-                        expandVertically(tween(NbMotion.Medium2, easing = NbMotion.EmphasizedDecelerate)),
-                    exit = fadeOut(tween(140, easing = NbMotion.EmphasizedAccelerate)) +
-                        shrinkVertically(tween(NbMotion.Short4, easing = NbMotion.EmphasizedAccelerate))
-                ) {
-                    suggestion?.invoke()
-                }
-
-                IslandBody(
-                    state = state,
-                    mic = mic,
-                    colors = colors,
-                    reducedMotion = reducedMotion,
-                    screenWidth = screenWidth,
-                    screenHeight = screenHeight,
-                    onEvent = onEvent,
-                    onMicAction = onMicAction,
-                    pageContent = pageContent
-                )
+                suggestion?.invoke()
             }
+
+            IslandBody(
+                state = state,
+                mic = mic,
+                colors = colors,
+                reducedMotion = reducedMotion,
+                screenWidth = screenWidth,
+                screenHeight = screenHeight,
+                instrumentHeightPx = instrumentHeightPx,
+                backPreview = { backPreview.floatValue },
+                onEvent = onEvent,
+                onMicAction = onMicAction,
+                pageContent = pageContent,
+                modifier = Modifier.align(Alignment.TopStart)
+            )
 
             // Feedback sits on its own anchor at the bottom of the screen so a
             // launch note can never shift the island that produced it.
@@ -216,9 +260,12 @@ private fun IslandBody(
     reducedMotion: Boolean,
     screenWidth: Dp,
     screenHeight: Dp,
+    instrumentHeightPx: Int,
+    backPreview: () -> Float,
     onEvent: (IslandEvent) -> Unit,
     onMicAction: () -> Unit,
-    pageContent: @Composable (IslandPage) -> Unit
+    pageContent: @Composable (IslandPage) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
 
@@ -236,36 +283,60 @@ private fun IslandBody(
         label = "islandSize"
     ) { expanded -> if (expanded) 1f else 0f }
 
-    // Content: a designed duration with a small stagger, so it settles *after*
-    // the container has already started moving rather than riding every frame of
-    // the spring. Emphasized decelerate on the way in, accelerate on the way out.
+    // Content: deliberately shorter than the silhouette and with no stagger.
+    // Decorative choreography is not worth a single frame of not-yet-visible
+    // content: the page must be ready to read (and to tap) immediately.
     val contentProgress = transition.animateFloat(
         transitionSpec = {
             when {
                 reducedMotion -> tween(0)
-                targetState -> tween(
-                    durationMillis = NbMotion.Medium1,
-                    delayMillis = 60,
-                    easing = NbMotion.EmphasizedDecelerate
-                )
-                else -> tween(NbMotion.Short4, easing = NbMotion.EmphasizedAccelerate)
+                targetState -> tween(140, easing = NbMotion.EmphasizedDecelerate)
+                else -> tween(110, easing = NbMotion.EmphasizedAccelerate)
             }
         },
         label = "islandContent"
     ) { expanded -> if (expanded) 1f else 0f }
 
     // --- geometry, resolved once and then only read in later phases --------
-    // Panel sizing leaves the top fifth of the screen free for the widget and
-    // never asks for more than half the height.
-    val geometry = remember(density, screenWidth, screenHeight) {
-        val panelWidthDp = (screenWidth - NbDim.ScreenInset * 2).coerceAtMost(NbDim.PanelMaxWidth)
-        val maxPanelHeight = (screenHeight - 210.dp).coerceAtLeast(240.dp)
-        val panelHeightDp = (screenHeight * 0.5f).coerceIn(240.dp, maxPanelHeight)
+    // The expanded panel has a fixed home: under the instrument on phones, level
+    // with it on wide screens, and never lower than the bottom breathing room
+    // allows. Its height is therefore the only figure that varies with content.
+    val statusBarPx = WindowInsets.statusBars.getTop(density).toFloat()
+    val navBarPx = WindowInsets.navigationBars.getBottom(density).toFloat()
+    val geometry = remember(density, screenWidth, screenHeight, instrumentHeightPx, statusBarPx, navBarPx) {
+        val insetPx = with(density) { NbDim.ScreenInset.toPx() }
+        val panelWidthPx = with(density) {
+            (screenWidth - NbDim.ScreenInset * 2).coerceAtMost(NbDim.PanelMaxWidth).toPx()
+        }
+        val screenHeightPx = with(density) { screenHeight.toPx() }
+        val pillWidthPx = with(density) { NbDim.PillWidth.toPx() }
+        val pillHeightPx = with(density) { NbDim.PillHeight.toPx() }
+        val gapPx = with(density) { NbDim.InstrumentGap.toPx() }
+        val topInsetPx = statusBarPx + with(density) { NbDim.WidgetTopInset.toPx() }
+
+        // Side by side is only safe when the panel and the instrument cannot meet.
+        val sideBySide = screenWidth >= 680.dp
+        val instrumentPx = if (instrumentHeightPx > 0) {
+            instrumentHeightPx.toFloat()
+        } else {
+            with(density) { 190.dp.toPx() }
+        }
+        val panelTopPx = if (sideBySide) topInsetPx else topInsetPx + instrumentPx + gapPx
+
+        val bottomRoom = screenHeightPx - panelTopPx - with(density) { 24.dp.toPx() }
+        val minPanelPx = with(density) { 220.dp.toPx() }
+        val maxPanelPx = bottomRoom.coerceAtLeast(minPanelPx)
+        val preferredPx = screenHeightPx * 0.52f
+        val panelHeightPx = preferredPx.coerceIn(minPanelPx, maxPanelPx)
+
         IslandGeometry(
-            collapsedWidth = with(density) { NbDim.PillWidth.toPx() },
-            collapsedHeight = with(density) { NbDim.PillHeight.toPx() },
-            panelWidth = with(density) { panelWidthDp.toPx() },
-            panelHeight = with(density) { panelHeightDp.toPx() },
+            leftInset = insetPx,
+            collapsedWidth = pillWidthPx,
+            collapsedHeight = pillHeightPx,
+            panelWidth = panelWidthPx,
+            panelHeight = panelHeightPx,
+            centerY = (screenHeightPx - navBarPx - pillHeightPx) / 2f,
+            expandedY = panelTopPx,
             cornerTop = with(density) { NbDim.PanelCornerTop.toPx() },
             cornerBottom = with(density) { NbDim.PanelCornerBottom.toPx() },
             shadowCollapsed = with(density) { 10.dp.toPx() },
@@ -279,7 +350,9 @@ private fun IslandBody(
     var showExpanded by remember { mutableStateOf(state.isExpanded) }
     var showPill by remember { mutableStateOf(!state.isExpanded) }
     LaunchedEffect(state.isExpanded, reducedMotion) {
-        val settle = if (reducedMotion) 0L else 520L
+        // Only long enough for the cross-fade to finish; the old 520ms hold kept a
+        // dead app grid composed and a hidden pill mounted far longer than needed.
+        val settle = if (reducedMotion) 0L else 240L
         if (state.isExpanded) {
             showExpanded = true
             delay(settle)
@@ -292,9 +365,17 @@ private fun IslandBody(
     }
 
     Box(
-        modifier = Modifier
-            // Size lives in the layout phase: no composition, and the parent
-            // re-places the island by measurement alone.
+        modifier = modifier
+            // Position and size live in the layout phase: no composition, and the
+            // parent re-places the island by measurement alone. The capsule rises
+            // from the left-middle to the panel's fixed anchor as it opens.
+            .offset {
+                val p = sizeProgress.value.coerceIn(0f, 1f)
+                IntOffset(
+                    x = geometry.leftInset.roundToInt(),
+                    y = lerp(geometry.centerY, geometry.expandedY, p).roundToInt()
+                )
+            }
             .layout { measurable, constraints ->
                 val p = sizeProgress.value.coerceIn(0f, 1f)
                 val width = lerp(geometry.collapsedWidth, geometry.panelWidth, p)
@@ -308,10 +389,10 @@ private fun IslandBody(
                 )
                 layout(width, height) { placeable.placeRelative(0, 0) }
             }
-            // Shape, clip and elevation live in the draw phase.
+            // Shape, clip, elevation and the back-gesture preview live in the draw phase.
             .graphicsLayer {
                 val p = sizeProgress.value.coerceIn(0f, 1f)
-                val pillRadius = geometry.collapsedHeight / 2f
+                val pillRadius = geometry.collapsedWidth / 2f
                 val topRadius = lerp(pillRadius, geometry.cornerTop, p)
                 val bottomRadius = lerp(pillRadius, geometry.cornerBottom, p)
                 shape = RoundedCornerShape(
@@ -322,6 +403,11 @@ private fun IslandBody(
                 )
                 clip = true
                 shadowElevation = lerp(geometry.shadowCollapsed, geometry.shadowExpanded, p)
+                // A small dip toward the screen edge that tracks the system back
+                // gesture; multiplied by p so it dissolves into the collapse.
+                val dip = backPreview().coerceIn(0f, 1f) * p
+                scaleX = 1f - 0.045f * dip
+                scaleY = 1f - 0.045f * dip
             }
             .background(colors.surfaceSolid)
             .semantics {
@@ -369,23 +455,21 @@ private fun IslandBody(
         )
 
         // --- collapsed face --------------------------------------------------
-        // Aligned to the container's own centre-left, which is exactly where the
-        // container sits when it is the size of the pill — so the glyphs hold
-        // their position while the silhouette grows around them.
+        // A portrait stack (search, separator, mic). It is centred in the
+        // container, so at rest it fills the capsule exactly; as the panel grows
+        // it drifts to the middle of the silhouette and fades out.
         if (showPill) {
-            Row(
+            Column(
                 modifier = Modifier
-                    .align(Alignment.CenterStart)
+                    .align(Alignment.Center)
                     .width(NbDim.PillWidth)
                     .height(NbDim.PillHeight)
                     .graphicsLayer {
-                        val p = sizeProgress.value.coerceIn(0f, 1f)
-                        alpha = 1f - p
-                        translationY = 8.dp.toPx() * p
+                        alpha = 1f - sizeProgress.value.coerceIn(0f, 1f)
                     }
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
+                    .padding(vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 PillGlyph(
                     glyph = Glyph.SEARCH,
@@ -395,7 +479,6 @@ private fun IslandBody(
                 )
                 Box(
                     Modifier
-                        .padding(horizontal = 3.dp)
                         .size(3.dp)
                         .clip(CircleShape)
                         .background(colors.onSurfaceDim)
@@ -408,11 +491,18 @@ private fun IslandBody(
         if (showExpanded) {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
+                    // Fixed final size, independent of the animated clip window.
+                    // The subtree is therefore measured once with identical
+                    // constraints and reused, instead of re-laying out the tabs,
+                    // the page and the app grid on every frame of the morph.
+                    .layout { measurable, _ ->
+                        val w = geometry.panelWidth.roundToInt()
+                        val h = geometry.panelHeight.roundToInt()
+                        val placeable = measurable.measure(Constraints.fixed(w, h))
+                        layout(w, h) { placeable.placeRelative(0, 0) }
+                    }
                     .graphicsLayer {
-                        val c = contentProgress.value.coerceIn(0f, 1f)
-                        alpha = c
-                        translationY = 10.dp.toPx() * (1f - c)
+                        alpha = contentProgress.value.coerceIn(0f, 1f)
                     }
             ) {
                 IslandTabs(
@@ -429,19 +519,14 @@ private fun IslandBody(
                 ) {
                     AnimatedContent(
                         targetState = state.page,
+                        // A short cross-fade only. Page slides look like decoration
+                        // and delay the thing the user actually asked for.
                         transitionSpec = {
-                            val dir = if (targetState.index() >= initialState.index()) 1 else -1
                             if (reducedMotion) {
                                 fadeIn(tween(0)) togetherWith fadeOut(tween(0))
                             } else {
-                                (fadeIn(tween(NbMotion.Short4, easing = NbMotion.EmphasizedDecelerate)) +
-                                    slideInHorizontally(
-                                        tween(NbMotion.Medium1, easing = NbMotion.EmphasizedDecelerate)
-                                    ) { it * dir / 5 }) togetherWith
-                                    (fadeOut(tween(140, easing = NbMotion.EmphasizedAccelerate)) +
-                                        slideOutHorizontally(
-                                            tween(NbMotion.Short4, easing = NbMotion.EmphasizedAccelerate)
-                                        ) { -it * dir / 5 })
+                                fadeIn(tween(120, easing = NbMotion.EmphasizedDecelerate)) togetherWith
+                                    fadeOut(tween(90, easing = NbMotion.EmphasizedAccelerate))
                             }
                         },
                         label = "islandPages"
@@ -485,9 +570,9 @@ private fun IslandTabs(
                 animationSpec = if (reducedMotion) {
                     tween(0)
                 } else if (active) {
-                    tween(NbMotion.Medium2, easing = NbMotion.EmphasizedDecelerate)
+                    tween(130, easing = NbMotion.EmphasizedDecelerate)
                 } else {
-                    tween(NbMotion.Short4, easing = NbMotion.EmphasizedAccelerate)
+                    tween(100, easing = NbMotion.EmphasizedAccelerate)
                 },
                 label = "tabWash"
             )
@@ -595,10 +680,15 @@ private fun PillGlyph(
 
 /** Pixel geometry for the morph, resolved once per screen size. */
 private data class IslandGeometry(
+    val leftInset: Float,
     val collapsedWidth: Float,
     val collapsedHeight: Float,
     val panelWidth: Float,
     val panelHeight: Float,
+    /** Top of the capsule when collapsed (left-edge middle). */
+    val centerY: Float,
+    /** Fixed top of the expanded panel — under the instrument, or level with it. */
+    val expandedY: Float,
     val cornerTop: Float,
     val cornerBottom: Float,
     val shadowCollapsed: Float,

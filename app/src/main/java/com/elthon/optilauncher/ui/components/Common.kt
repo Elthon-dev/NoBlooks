@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.elthon.optilauncher.core.habits.Confidence
 import com.elthon.optilauncher.ui.theme.LocalNbColors
+import com.elthon.optilauncher.ui.theme.NbDim
 import com.elthon.optilauncher.ui.theme.NbType
 import androidx.compose.foundation.text.BasicText
 
@@ -214,9 +215,12 @@ fun OptionRow(
                     it
                 }
             }
-            .padding(vertical = 10.dp),
+            // Settings rows carry their own inset: title, description and the
+            // trailing control all line up with the section labels and never
+            // touch the panel wall.
+            .padding(horizontal = NbDim.ContentInset, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Column(Modifier.weight(1f)) {
             NbText(

@@ -1,6 +1,8 @@
 name: Android CI
 
-# NoBlooks: unit tests, lint and a debug APK on every push and PR.
+# NoBlooks: unit tests, lint, and debug + release APKs on every push and PR.
+# The release APK (R8) is the one to judge animation smoothness with: Compose
+# runs interpreted in debuggable builds, so debug is not representative.
 on:
   push:
     branches: ["main", "master"]
@@ -38,20 +40,53 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # A fresh runner generates a fresh debug keystore every run, which changes the
+      # APK signature and makes updates uninstallable. Cache one key so repeated
+      # installs (debug or release) share a signature. Debug key material, not a
+      # production signing secret.
+      - name: Cache debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
       - name: Unit tests
         run: ./gradlew --no-daemon testDebugUnitTest
 
       - name: Lint
         run: ./gradlew --no-daemon lintDebug
 
-      - name: Assemble debug APK
-        run: ./gradlew --no-daemon assembleDebug
+      - name: Assemble debug and release APKs
+        run: ./gradlew --no-daemon assembleDebug assembleRelease
+
+      # AGP's public variant API exposes no output file name in 8.7, so the shipped
+      # files get their names here, in one obvious place.
+      - name: Name APKs
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk optilauncher-debug.apk
+          cp app/build/outputs/apk/release/app-release.apk optilauncher-release.apk
+
+      - name: Report bundled baseline profile
+        run: |
+          if unzip -l optilauncher-release.apk | grep -E 'assets/dexopt/baseline'; then
+            echo "baseline profile: bundled"
+          else
+            echo "baseline profile: NOT bundled (library profiles were not merged)"
+          fi
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: noblooks-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: optilauncher-debug-apk
+          path: optilauncher-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: optilauncher-release-apk
+          path: optilauncher-release.apk
           if-no-files-found: error
           retention-days: 14
 
@@ -59,9 +94,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: noblooks-reports
+          name: optilauncher-reports
           path: |
             app/build/reports/tests/**
             app/build/reports/lint-results-debug.html
+            app/build/outputs/mapping/release/mapping.txt
           if-no-files-found: ignore
           retention-days: 7

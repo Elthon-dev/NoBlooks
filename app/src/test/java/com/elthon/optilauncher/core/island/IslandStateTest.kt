@@ -62,6 +62,8 @@ class IslandStateTest {
             .reduce(IslandEvent.QueryChanged("ma"))
         val after = expanded.reduce(IslandEvent.AppLaunched)
         assertFalse(after.isExpanded)
+        // Reopening must be a fresh habit view, never the previous search text.
+        assertEquals("", after.query)
     }
 
     @Test

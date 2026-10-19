@@ -11,24 +11,23 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
@@ -57,20 +56,25 @@ import com.elthon.optilauncher.ui.theme.NbDim
 import com.elthon.optilauncher.ui.theme.NbType
 
 /**
- * Apps grid — the island's default page.
+ * Apps page — habit-first, search-second.
  *
- * Ordering is deliberately boring when there is no query: the prediction (when
- * it has real confidence) gets one prominent row, pinned favorites come next,
- * then everything alphabetical. No fabricated "trending" noise.
+ * With no query the page is an answer, not a phone book: the prediction row,
+ * then the apps the user actually opens (usage-ranked habits plus pinned
+ * favourites). Everything else is one query away, and the field says how many
+ * apps are searchable. Typing switches the whole grid over to matches; pinned
+ * apps are never filtered out of the results.
  *
- * The search field is a plain text field: it takes focus only when tapped, so
- * opening the island never throws the keyboard up at the user.
+ * The grid is the only scrollable on the page — headers are full-span items, so
+ * there is no lazy grid nested inside another scroll container and no double
+ * gesture handling. The search field is a plain text field: it takes focus only
+ * when tapped, so opening the island never throws the keyboard up at the user.
  */
 @Composable
 fun AppsPage(
     apps: List<AppEntry>,
     query: String,
     pinned: Set<String>,
+    habitPackages: List<String>,
     prediction: Prediction,
     loading: Boolean,
     iconFor: (String) -> ImageBitmap?,
@@ -85,10 +89,21 @@ fun AppsPage(
 
     val searchResult = remember(apps, query) { AppSearch.search(apps.map { it.toRef() }, query) }
     val entriesByRef = remember(apps) { apps.associateBy { it.component.flattenToString() } }
-    val matches: List<AppEntry> = if (query.isBlank()) {
-        apps
+    val isSearching = query.isNotBlank()
+    val matches: List<AppEntry> = if (!isSearching) {
+        emptyList()
     } else {
         searchResult.apps.mapNotNull { entriesByRef[it.component] }
+    }
+
+    // Habits in usage-rank order, then pinned favourites the ranking missed.
+    val habitApps = remember(apps, pinned, habitPackages) {
+        val seen = HashSet<String>()
+        val ranked = habitPackages
+            .mapNotNull { pkg -> apps.firstOrNull { it.packageName == pkg } }
+            .filter { seen.add(it.packageName) }
+        val pinnedApps = apps.filter { it.packageName in pinned && seen.add(it.packageName) }
+        ranked + pinnedApps
     }
 
     Column(modifier.fillMaxSize()) {
@@ -98,27 +113,55 @@ fun AppsPage(
                 .fillMaxWidth()
                 .padding(horizontal = NbDim.ContentInset, vertical = 10.dp)
                 .clip(RoundedCornerShape(14.dp))
-                .background(colors.surfaceSolid)
+                // Tonal inset, not a border: the panel is solid, so the field needs
+                // its own shade to read as an input at all.
+                .background(
+                    if (colors.isDark) {
+                        Color.White.copy(alpha = 0.065f)
+                    } else {
+                        Color.Black.copy(alpha = 0.045f)
+                    }
+                )
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             IconGlyph(Glyph.SEARCH, colors.onSurfaceDim, Modifier.size(16.dp))
-            BasicTextField(
-                value = query,
-                onValueChange = onQueryChanged,
-                modifier = Modifier
-                    .weight(1f)
-                    .semantics { contentDescription = "Search installed apps" },
-                textStyle = NbType.body.copy(color = colors.onSurface),
-                cursorBrush = SolidColor(colors.accent),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Text,
-                    imeAction = ImeAction.Search
-                ),
-                keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() })
-            )
+            Box(Modifier.weight(1f)) {
+                if (query.isEmpty()) {
+                    NbText(
+                        if (apps.isEmpty()) {
+                            "Search apps"
+                        } else {
+                            "Search ${apps.size} apps"
+                        },
+                        style = NbType.body,
+                        color = colors.onSurfaceDim,
+                        maxLines = 1
+                    )
+                }
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChanged,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics { contentDescription = "Search installed apps" },
+                    textStyle = NbType.body.copy(color = colors.onSurface),
+                    cursorBrush = SolidColor(colors.accent),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Search
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onSearch = {
+                            keyboard?.hide()
+                            // Enter launches the best match — the reason people type.
+                            matches.firstOrNull()?.let(onLaunch)
+                        }
+                    )
+                )
+            }
             if (query.isNotEmpty()) {
                 IconTap(
                     glyph = Glyph.CLOSE,
@@ -131,85 +174,115 @@ fun AppsPage(
         }
 
         // --- results -------------------------------------------------------
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-            if (loading && apps.isEmpty()) {
-                EmptyState(
-                    title = "Reading installed apps…",
-                    description = "The launcher asks Android for launchable activities. Nothing leaves the phone.",
-                    modifier = Modifier.padding(horizontal = NbDim.ContentInset, vertical = 28.dp)
-                )
-            } else if (query.isNotBlank() && matches.isEmpty()) {
-                val noApps = searchResult.reason == SearchResult.EmptyReason.NO_APPS
-                EmptyState(
-                    title = if (noApps) "No launchable apps" else "No matches",
-                    description = if (noApps) {
-                        "This device reports no apps with a launcher entry."
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(3),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 16.dp)
+        ) {
+            when {
+                loading && apps.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) {
+                    EmptyState(
+                        title = "Reading installed apps…",
+                        description = "The launcher asks Android for launchable activities. Nothing leaves the phone.",
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 24.dp)
+                    )
+                }
+
+                isSearching && matches.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) {
+                    val noApps = searchResult.reason == SearchResult.EmptyReason.NO_APPS
+                    EmptyState(
+                        title = if (noApps) "No launchable apps" else "No matches",
+                        description = if (noApps) {
+                            "This device reports no apps with a launcher entry."
+                        } else {
+                            "Nothing on this device matches \"$query\"."
+                        },
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 24.dp)
+                    )
+                }
+
+                isSearching -> {
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "results-label") {
+                        SectionLabel(
+                            if (matches.size == 1) "1 result" else "${matches.size} results",
+                            Modifier.padding(horizontal = 6.dp, vertical = 6.dp)
+                        )
+                    }
+                    items(matches, key = { it.component.flattenToString() }, contentType = { "app" }) { app ->
+                        AppCell(
+                            modifier = Modifier.animateItem(),
+                            app = app,
+                            pinned = app.packageName in pinned,
+                            iconFor = iconFor,
+                            onLaunch = { onLaunch(app) },
+                            onTogglePin = { onTogglePin(app.toRef()) }
+                        )
+                    }
+                }
+
+                else -> {
+                    if (prediction.hasPrediction) {
+                        item(span = { GridItemSpan(maxLineSpan) }, key = "prediction") {
+                            PredictionRow(
+                                prediction = prediction,
+                                iconFor = iconFor,
+                                onOpen = onPredictedOpen,
+                                modifier = Modifier.padding(horizontal = 6.dp)
+                            )
+                        }
+                    }
+
+                    if (habitApps.isEmpty()) {
+                        // No usage history yet: an empty page would be a dead end,
+                        // so fall back to the honest full list until habits exist.
+                        item(span = { GridItemSpan(maxLineSpan) }, key = "all-label") {
+                            SectionLabel(
+                                "All apps",
+                                Modifier.padding(horizontal = 6.dp, vertical = 6.dp)
+                            )
+                        }
+                        items(apps, key = { it.component.flattenToString() }, contentType = { "app" }) { app ->
+                            AppCell(
+                                modifier = Modifier.animateItem(),
+                                app = app,
+                                pinned = app.packageName in pinned,
+                                iconFor = iconFor,
+                                onLaunch = { onLaunch(app) },
+                                onTogglePin = { onTogglePin(app.toRef()) }
+                            )
+                        }
                     } else {
-                        "Nothing on this device matches \"$query\"."
-                    },
-                    modifier = Modifier.padding(horizontal = NbDim.ContentInset, vertical = 28.dp)
-                )
-            } else {
-                if (query.isBlank() && prediction.hasPrediction) {
-                    PredictionRow(
-                        prediction = prediction,
-                        iconFor = iconFor,
-                        onOpen = onPredictedOpen,
-                        modifier = Modifier.padding(horizontal = NbDim.ContentInset)
-                    )
-                }
-
-                val pinnedApps = if (query.isBlank()) {
-                    matches.filter { it.packageName in pinned }
-                } else {
-                    emptyList()
-                }
-                val rest = matches.filterNot { it.packageName in pinned }
-
-                if (pinnedApps.isNotEmpty()) {
-                    SectionLabel(
-                        "Pinned",
-                        Modifier.padding(start = NbDim.ContentInset, end = NbDim.ContentInset, top = 12.dp, bottom = 6.dp)
-                    )
-                    AppGrid(pinnedApps, pinned, iconFor, onLaunch, onTogglePin)
-                }
-                if (rest.isNotEmpty()) {
-                    SectionLabel(
-                        if (query.isNotBlank()) "${rest.size} results" else "All apps",
-                        Modifier.padding(start = NbDim.ContentInset, end = NbDim.ContentInset, top = 12.dp, bottom = 6.dp)
-                    )
-                    AppGrid(rest, pinned, iconFor, onLaunch, onTogglePin)
+                        item(span = { GridItemSpan(maxLineSpan) }, key = "habit-label") {
+                            SectionLabel(
+                                "Habit apps",
+                                Modifier.padding(horizontal = 6.dp, vertical = 6.dp)
+                            )
+                        }
+                        items(habitApps, key = { it.component.flattenToString() }, contentType = { "app" }) { app ->
+                            AppCell(
+                                modifier = Modifier.animateItem(),
+                                app = app,
+                                pinned = app.packageName in pinned,
+                                iconFor = iconFor,
+                                onLaunch = { onLaunch(app) },
+                                onTogglePin = { onTogglePin(app.toRef()) }
+                            )
+                        }
+                        if (apps.size > habitApps.size) {
+                            item(span = { GridItemSpan(maxLineSpan) }, key = "search-hint") {
+                                NbText(
+                                    "Search to see the other ${apps.size - habitApps.size} apps.",
+                                    style = NbType.bodySmall,
+                                    color = colors.onSurfaceDim,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun AppGrid(
-    apps: List<AppEntry>,
-    pinned: Set<String>,
-    iconFor: (String) -> ImageBitmap?,
-    onLaunch: (AppEntry) -> Unit,
-    onTogglePin: (AppRef) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(max = 620.dp),
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-    ) {
-        items(apps, key = { it.component.flattenToString() }) { app ->
-            AppCell(
-                modifier = Modifier.animateItem(),
-                app = app,
-                pinned = app.packageName in pinned,
-                iconFor = iconFor,
-                onLaunch = { onLaunch(app) },
-                onTogglePin = { onTogglePin(app.toRef()) }
-            )
         }
     }
 }

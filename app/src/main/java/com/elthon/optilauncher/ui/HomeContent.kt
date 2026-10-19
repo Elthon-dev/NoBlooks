@@ -11,10 +11,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.elthon.optilauncher.core.island.IslandEvent
@@ -37,11 +40,12 @@ import com.elthon.optilauncher.ui.theme.NoBlooksTheme
  * floating island in the middle of the left edge, and the first-run overlay until
  * the user has acknowledged it.
  *
- * The two surfaces are deliberately diagonal — the island owns the left middle,
- * the instrument sits out of its way in the opposite corner — so neither can ever
- * cover the other regardless of screen height. Both share one inset and one
- * corner rhythm. There is no title bar, no drawer icon row, no second activity.
- * The wallpaper is the interface.
+ * The island is a portrait capsule because it lives on a side edge; when it opens
+ * it lands in a fixed slot sized from the instrument's measured height, so the
+ * expanded panel always starts just under (or, on wide screens, level with) the
+ * instrument instead of wherever the content happened to end. Both share one
+ * inset and one corner rhythm. There is no title bar, no drawer icon row, no
+ * second activity. The wallpaper is the interface.
  */
 @Composable
 fun HomeContent(
@@ -60,6 +64,9 @@ fun HomeContent(
             if (granted) viewModel.startMicCheck(hasPermission = true)
         }
         val reducedMotion = systemReducedMotion || ui.settings.reducedMotion
+        // Measured, not assumed: the panel's fixed top anchor is derived from the
+        // instrument's real height, so font-scale changes cannot cause a collision.
+        var instrumentHeightPx by remember { mutableIntStateOf(0) }
 
         Box(Modifier.fillMaxSize()) {
             // --- instrument widget over the wallpaper ----------------------
@@ -69,7 +76,8 @@ fun HomeContent(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .statusBarsPadding()
-                    .padding(end = NbDim.ScreenInset, top = 18.dp),
+                    .padding(end = NbDim.ScreenInset, top = NbDim.WidgetTopInset)
+                    .onSizeChanged { instrumentHeightPx = it.height },
                 onClick = {
                     viewModel.onEvent(IslandEvent.SelectPage(IslandPage.APPS))
                     viewModel.onEvent(IslandEvent.Expand)
@@ -82,6 +90,7 @@ fun HomeContent(
                 mic = ui.mic,
                 reducedMotion = reducedMotion,
                 message = ui.message,
+                instrumentHeightPx = instrumentHeightPx,
                 onEvent = viewModel::onEvent,
                 onMicAction = {
                     viewModel.onEvent(IslandEvent.SelectPage(IslandPage.SETTINGS))
@@ -111,6 +120,7 @@ fun HomeContent(
                             apps = ui.apps,
                             query = ui.island.query,
                             pinned = ui.settings.favorites,
+                            habitPackages = ui.habitSummary?.topApps?.map { it.packageName }.orEmpty(),
                             prediction = ui.habitSummary?.prediction
                                 ?: com.elthon.optilauncher.core.habits.Prediction.noneAvailable(""),
                             loading = ui.appsLoading,

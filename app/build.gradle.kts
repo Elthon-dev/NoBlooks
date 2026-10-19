@@ -12,7 +12,7 @@ android {
         applicationId = "com.elthon.optilauncher"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
+        versionCode = 3
         versionName = "1.0.0"
 
         // Exposed at runtime so the diagnostics page can state the real build contract
@@ -29,11 +29,14 @@ android {
             isMinifyEnabled = false
         }
         release {
-            // Debug APK is the verified deliverable of this phase; release minification is
-            // wired but not exercised here (an unsigned release build is not claimed as
-            // production-ready).
+            // Compose is dramatically slower in a debuggable build (the whole UI
+            // stack runs interpreted), so the release variant is the artifact to
+            // judge smoothness with. Signed with the debug key so CI produces an
+            // installable APK; this is not a Play Store signing setup.
             isMinifyEnabled = true
             isShrinkResources = true
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -70,8 +73,15 @@ android {
     }
 }
 
+// Note: AGP 8.7's public variant API has no outputFileName property, so CI names the
+// shipped files (optilauncher-debug.apk / optilauncher-release.apk) when it collects
+// artifacts instead of poking at internal Gradle classes.
+
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
+    // Installs the baseline profiles shipped by Compose/AndroidX (and any profile
+    // bundled in the APK), so first-run frames use AOT-compiled code paths.
+    implementation("androidx.profileinstaller:profileinstaller:1.4.0")
     implementation("androidx.activity:activity-ktx:1.9.2")
     implementation("androidx.activity:activity-compose:1.9.3")
 
