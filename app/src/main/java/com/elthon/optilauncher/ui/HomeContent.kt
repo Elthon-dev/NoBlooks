@@ -20,7 +20,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.elthon.optilauncher.core.island.IslandEvent
 import com.elthon.optilauncher.core.island.IslandPage
 import com.elthon.optilauncher.ui.components.Chip
-import com.elthon.optilauncher.ui.components.ClockWidget
+import com.elthon.optilauncher.ui.components.GlanceWidget
 import com.elthon.optilauncher.ui.components.Glyph
 import com.elthon.optilauncher.ui.island.FloatingIsland
 import com.elthon.optilauncher.ui.island.pages.AppsPage
@@ -33,13 +33,15 @@ import com.elthon.optilauncher.ui.theme.NbDim
 import com.elthon.optilauncher.ui.theme.NoBlooksTheme
 
 /**
- * The home screen, and nothing else: a live clock widget at the top-left, the
- * floating island at the bottom-left, and the first-run overlay until the user
- * has acknowledged it.
+ * The home screen, and nothing else: the glance instrument at the top-right, the
+ * floating island in the middle of the left edge, and the first-run overlay until
+ * the user has acknowledged it.
  *
- * Both surfaces share one inset, so the composition reads as a deliberate
- * left-aligned column over the wallpaper. There is no title bar, no drawer icon
- * row, no second activity. The wallpaper is the interface.
+ * The two surfaces are deliberately diagonal — the island owns the left middle,
+ * the instrument sits out of its way in the opposite corner — so neither can ever
+ * cover the other regardless of screen height. Both share one inset and one
+ * corner rhythm. There is no title bar, no drawer icon row, no second activity.
+ * The wallpaper is the interface.
  */
 @Composable
 fun HomeContent(
@@ -60,12 +62,14 @@ fun HomeContent(
         val reducedMotion = systemReducedMotion || ui.settings.reducedMotion
 
         Box(Modifier.fillMaxSize()) {
-            // --- clock widget over the wallpaper ---------------------------
-            ClockWidget(
+            // --- instrument widget over the wallpaper ----------------------
+            // Top-right, so the island can own the true middle of the left edge
+            // without the two ever colliding, in either orientation.
+            GlanceWidget(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
+                    .align(Alignment.TopEnd)
                     .statusBarsPadding()
-                    .padding(start = NbDim.ScreenInset, top = 18.dp),
+                    .padding(end = NbDim.ScreenInset, top = 18.dp),
                 onClick = {
                     viewModel.onEvent(IslandEvent.SelectPage(IslandPage.APPS))
                     viewModel.onEvent(IslandEvent.Expand)

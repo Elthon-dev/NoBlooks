@@ -29,20 +29,25 @@ called out as **unverified** rather than claimed as working.
   machine, app search, habits, launch planner, settings codec, bounded cache)
 - `data/` — repositories: apps, icons, usage, launch recorder, wallpaper theme, mic
 - `ui/` — Compose: `theme/NbTheme.kt` (palette + `NbDim` geometry tokens),
-  `components/` (`Common.kt`, `Glyphs.kt`, `ClockWidget.kt`),
+  `components/` (`Common.kt`, `Glyphs.kt`, `GlanceWidget.kt`),
   `island/FloatingIsland.kt` + `island/pages/*`, `HomeContent.kt`, `LauncherViewModel.kt`
 - `recon/` — preserved diagnostics surface (Settings page)
 
 ## Design rules
 
-- Home screen = live clock widget (top-left) + floating island (bottom-left), one shared
-  `NbDim.ScreenInset`, composited over the real wallpaper (`FLAG_SHOW_WALLPAPER`, no
-  splash theme, no opaque sheet, no title bar).
+- Home screen = glance instrument (top-right) + floating island (middle of the left
+  edge), one shared `NbDim.ScreenInset`, composited over the real wallpaper
+  (`FLAG_SHOW_WALLPAPER`, no splash theme, no opaque sheet, no title bar). The two are
+  diagonal on purpose so neither can cover the other at any screen height.
 - Surfaces are **solid colour** with soft drop shadows for depth; no borders framing
   cards, no wallpaper bleed through panels.
-- Motion: physics-based springs (they preserve velocity across interruptions). The
-  island morph is one spring progress for the silhouette plus a slightly stiffer one
-  for content, anchored bottom-left so it grows from where it was.
+- Motion is fluid, never cartoony: only critically damped springs
+  (`Spring.DampingRatioNoBouncy`) or Material emphasized duration curves (`NbMotion`).
+  Under-damped springs are banned — overshoot is what reads as "cartoony". The island
+  morph keeps the pill's centre fixed so the silhouette grows out of it.
+- Animated values are read in the layout/draw phase (`Modifier.layout`, `graphicsLayer`,
+  Canvas lambdas), never during composition — a frame of animation must not recompose
+  the island, its tabs, or the open page. Faces are mounted from discrete state.
 - Never summon the soft keyboard on open — only when the user taps a text field.
 - Icons are hand-drawn `Canvas` glyphs; no Material 3 / icon libraries. Type goes
   through `NbText`.

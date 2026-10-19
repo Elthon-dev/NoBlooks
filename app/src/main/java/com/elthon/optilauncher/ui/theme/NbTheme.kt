@@ -1,5 +1,9 @@
 package com.elthon.optilauncher.ui.theme
 
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.SpringSpec
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
@@ -81,6 +85,41 @@ object NbDim {
     /** Home widget card. */
     val WidgetCorner = 26.dp
     val WidgetPadding = 18.dp
+}
+
+/**
+ * Motion language — fluid, never springy.
+ *
+ * Two sources, both chosen so nothing ever overshoots:
+ *  - [enterSpring] / [exitSpring] are critically damped (damping ratio 1.0), so
+ *    they settle in the shortest time *without oscillating*, while still carrying
+ *    velocity across an interruption the way a duration curve cannot;
+ *  - the emphasized curves below are the Material 3 tokens, used for content
+ *    reveals where a literal, designed duration reads better than physics.
+ *
+ * What is deliberately absent: any under-damped spring. A damping ratio below
+ * 1.0 is what makes motion read as "cartoony" — it overshoots its own target.
+ */
+object NbMotion {
+    /** M3 duration steps, milliseconds. */
+    const val Short4 = 200
+    const val Medium1 = 250
+    const val Medium2 = 300
+    const val Medium4 = 400
+
+    /** M3 emphasized easing set — decelerate on the way in, accelerate on the way out. */
+    val EmphasizedDecelerate: Easing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+    val EmphasizedAccelerate: Easing = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
+    val Standard: Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+
+    /** Silhouette opening: long, soft landing, zero bounce. */
+    val enterSpring: SpringSpec<Float> = SpringSpec(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow)
+
+    /** Silhouette closing: same curve, a touch quicker to get out of the way. */
+    val exitSpring: SpringSpec<Float> = SpringSpec(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium)
+
+    /** Content settling inside a moving container. */
+    val contentSpring: SpringSpec<Float> = SpringSpec(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium)
 }
 
 
