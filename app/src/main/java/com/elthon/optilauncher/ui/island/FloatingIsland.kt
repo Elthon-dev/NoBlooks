@@ -46,6 +46,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -269,7 +270,11 @@ private fun IslandBody(
 ) {
     val density = LocalDensity.current
 
-    val transition = updateTransition(targetState = state.isExpanded, label = "island")
+    // Local animation target. It is normally identical to state.isExpanded, but it
+    // lags by one frame when opening so the page can be composed and measured
+    // before the spring starts (see the mount effect below).
+    var animateExpanded by remember { mutableStateOf(state.isExpanded) }
+    val transition = updateTransition(targetState = animateExpanded, label = "island")
 
     // Silhouette: critically damped, so it never bounces past the target.
     val sizeProgress = transition.animateFloat(
@@ -349,17 +354,30 @@ private fun IslandBody(
     // what is mounted; the animation only decides what is visible.
     var showExpanded by remember { mutableStateOf(state.isExpanded) }
     var showPill by remember { mutableStateOf(!state.isExpanded) }
+
     LaunchedEffect(state.isExpanded, reducedMotion) {
-        // Only long enough for the cross-fade to finish; the old 520ms hold kept a
-        // dead app grid composed and a hidden pill mounted far longer than needed.
-        val settle = if (reducedMotion) 0L else 240L
         if (state.isExpanded) {
+            // Mount, then move. Composing the page (search field, grid, tab row)
+            // is the one expensive frame in the open path; if the spring starts in
+            // that same frame its first drawn frame arrives late — and a critically
+            // damped spring is already near its target by then, which is why
+            // opening looked instant while closing looked smooth (the close has no
+            // composition to pay for). Pay that frame while the capsule is still
+            // closed, then let the spring run at a steady frame rate.
             showExpanded = true
-            delay(settle)
+            if (!reducedMotion) {
+                withFrameNanos { }
+                delay(16)
+            }
+            animateExpanded = true
+            // Only long enough for the cross-fade to finish; the old 520ms hold
+            // kept a dead app grid composed and a hidden pill mounted far longer.
+            delay(240)
             showPill = false
         } else {
+            animateExpanded = false
             showPill = true
-            delay(settle)
+            delay(if (reducedMotion) 0L else 240L)
             showExpanded = false
         }
     }

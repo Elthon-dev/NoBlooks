@@ -118,8 +118,12 @@ object NbMotion {
     val EmphasizedAccelerate: Easing = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
     val Standard: Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 
-    /** Silhouette opening: crisp, zero bounce. Long, soft landings read as lag. */
-    val enterSpring: SpringSpec<Float> = SpringSpec(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium)
+    /**
+     * Silhouette opening: ~180ms, zero bounce. It has to be long enough to read as
+     * motion (a 120ms spring looked like a snap) and still settle well under the
+     * time a person waits before wondering if the tap registered.
+     */
+    val enterSpring: SpringSpec<Float> = SpringSpec(Spring.DampingRatioNoBouncy, stiffness = 650f)
 
     /** Silhouette closing: quicker still, so the launcher is never held hostage. */
     val exitSpring: SpringSpec<Float> = SpringSpec(Spring.DampingRatioNoBouncy, stiffness = 2500f)

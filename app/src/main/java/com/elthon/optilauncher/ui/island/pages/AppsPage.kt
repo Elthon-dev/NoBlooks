@@ -87,21 +87,34 @@ fun AppsPage(
     val colors = LocalNbColors.current
     val keyboard = LocalSoftwareKeyboardController.current
 
-    val searchResult = remember(apps, query) { AppSearch.search(apps.map { it.toRef() }, query) }
-    val entriesByRef = remember(apps) { apps.associateBy { it.component.flattenToString() } }
+    // Derived once per app list, not per keystroke: refs back the search, and the
+    // component map turns a result back into an entry without another O(n) scan.
+    val refs = remember(apps) { apps.map { it.toRef() } }
+    val entriesByComponent = remember(apps) {
+        apps.associateBy { it.component.flattenToString() }
+    }
+    val byPackage = remember(apps) {
+        val map = HashMap<String, AppEntry>(apps.size)
+        for (app in apps) if (!map.containsKey(app.packageName)) map[app.packageName] = app
+        map
+    }
+    val searchResult = remember(refs, query) { AppSearch.search(refs, query) }
     val isSearching = query.isNotBlank()
-    val matches: List<AppEntry> = if (!isSearching) {
-        emptyList()
-    } else {
-        searchResult.apps.mapNotNull { entriesByRef[it.component] }
+    // Every match, no cap: searching is a lookup, not a recommendation list.
+    val matches: List<AppEntry> = remember(searchResult, entriesByComponent, isSearching) {
+        if (!isSearching) {
+            emptyList()
+        } else {
+            searchResult.apps.mapNotNull { entriesByComponent[it.component] }
+        }
     }
 
     // Habits in usage-rank order, then pinned favourites the ranking missed.
-    val habitApps = remember(apps, pinned, habitPackages) {
+    val habitApps = remember(apps, pinned, habitPackages, byPackage) {
         val seen = HashSet<String>()
-        val ranked = habitPackages
-            .mapNotNull { pkg -> apps.firstOrNull { it.packageName == pkg } }
-            .filter { seen.add(it.packageName) }
+        val ranked = habitPackages.mapNotNull { pkg ->
+            byPackage[pkg]?.takeIf { seen.add(it.packageName) }
+        }
         val pinnedApps = apps.filter { it.packageName in pinned && seen.add(it.packageName) }
         ranked + pinnedApps
     }

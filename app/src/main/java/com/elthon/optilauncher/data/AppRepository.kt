@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 import androidx.core.content.ContextCompat
 import com.elthon.optilauncher.core.apps.AppRef
 import kotlinx.coroutines.Dispatchers
@@ -19,8 +20,8 @@ import kotlinx.coroutines.withContext
  * - Package add/remove/replace/locale broadcasts invalidate the cache (package
  *   broadcasts are protected: only the system can send them, which is why the
  *   receiver may be exported).
- * - Only MAIN+LAUNCHER activities are visible to us (manifest `<queries>`), and
- *   our own package is intentionally excluded from our own drawer.
+ * - MAIN+LAUNCHER and MAIN+LEANBACK_LAUNCHER activities are visible to us
+ *   (manifest `<queries>`), and our own package is intentionally excluded.
  */
 data class AppEntry(
     val packageName: String,
@@ -65,12 +66,19 @@ class AppRepository(context: Context) {
     }
 
     private fun queryLaunchableApps(): List<AppEntry> {
-        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val resolved = try {
-            pm.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
-        } catch (_: Throwable) {
-            emptyList()
-        }
+        // Ask for every MAIN/LAUNCHER activity, not just the ones that also declare
+        // CATEGORY_DEFAULT (that is what MATCH_DEFAULT_ONLY filters on). An explicit
+        // launcher entry launches whether or not DEFAULT is declared, and dropping
+        // those apps made the search list quietly incomplete. TV entries are merged
+        // in for the same reason; the duplicate filter below keeps one row per
+        // component.
+        val resolved = (
+            resolve(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)) +
+                resolve(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER))
+        ).distinctBy { info ->
+                val activity = info.activityInfo
+                if (activity == null) info else ComponentName(activity.packageName, activity.name)
+            }
         val now = System.currentTimeMillis()
         return resolved.mapNotNull { info ->
             val activityInfo = info.activityInfo ?: return@mapNotNull null
@@ -98,6 +106,13 @@ class AppRepository(context: Context) {
                 compareBy<AppEntry> { entry -> entry.label.lowercase(java.util.Locale.ROOT) }
                     .thenBy { entry -> entry.packageName }
             )
+    }
+
+    private fun resolve(intent: Intent): List<ResolveInfo> = try {
+        // 0 flags: do not require CATEGORY_DEFAULT. See queryLaunchableApps().
+        pm.queryIntentActivities(intent, 0)
+    } catch (_: Throwable) {
+        emptyList()
     }
 
     /**

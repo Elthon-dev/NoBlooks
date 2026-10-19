@@ -115,12 +115,18 @@ fun HomeContent(
                     }
                 },
                 pageContent = { page ->
+                    // Derived here so the list identity is stable across unrelated
+                    // recompositions; otherwise AppsPage re-derives its habit grid
+                    // every time the mic level or a message tick changes.
+                    val habitPackages = remember(ui.habitSummary) {
+                        ui.habitSummary?.topApps?.map { it.packageName }.orEmpty()
+                    }
                     when (page) {
                         IslandPage.APPS -> AppsPage(
                             apps = ui.apps,
                             query = ui.island.query,
                             pinned = ui.settings.favorites,
-                            habitPackages = ui.habitSummary?.topApps?.map { it.packageName }.orEmpty(),
+                            habitPackages = habitPackages,
                             prediction = ui.habitSummary?.prediction
                                 ?: com.elthon.optilauncher.core.habits.Prediction.noneAvailable(""),
                             loading = ui.appsLoading,

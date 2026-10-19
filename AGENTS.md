@@ -50,9 +50,11 @@ called out as **unverified** rather than claimed as working.
   cannot cause a collision.
 - Apps page is **habit-first**: with no query it shows usage-ranked habits plus pinned
   favourites (falling back to the full list only when there is no history); typing
-  switches the grid to search over every app, pinned apps included. Enter launches the
-  best match. Launching clears the query. Back unwinds an active search before it
-  collapses the island.
+  switches the grid to search over every app, pinned apps included, with no result cap.
+  Discovery asks for LAUNCHER *and* LEANBACK entries without `MATCH_DEFAULT_ONLY`, so
+  apps that omit `CATEGORY_DEFAULT` are searchable too. Enter launches the best match.
+  Launching clears the query. Back unwinds an active search before it collapses the
+  island.
 - Surfaces are **solid colour** with soft drop shadows for depth; no borders framing
   cards, no wallpaper bleed through panels.
 - Motion is crisp, never cartoony: only critically damped springs
@@ -64,6 +66,9 @@ called out as **unverified** rather than claimed as working.
 - Animated values are read in the layout/draw phase (`Modifier.layout`, `graphicsLayer`,
   Canvas lambdas), never during composition — a frame of animation must not recompose
   the island, its tabs, or the open page. Faces are mounted from discrete state.
+- **Mount, then move.** Opening mounts the expanded face and lets one frame land before
+  the size spring starts. A page's first composition is the expensive frame; if it runs
+  mid-morph the spring is already near its target and the open reads as a snap.
 - Never summon the soft keyboard on open — only when the user taps a text field.
 - Icons are hand-drawn `Canvas` glyphs; no Material 3 / icon libraries. Type goes
   through `NbText`.
