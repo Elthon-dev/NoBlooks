@@ -47,7 +47,8 @@ called out as **unverified** rather than claimed as working.
   island is a **portrait capsule** (it lives on a side edge). The expanded panel has a
   **fixed anchor**: directly under the measured instrument on phones, level with its top
   edge on wide screens (≥680dp). The instrument reports its height so font-scale changes
-  cannot cause a collision.
+  cannot cause a collision. The panel's bottom is clamped to the IME while the keyboard
+  is up, so the app grid never continues underneath it.
 - Apps page is **habit-first**: with no query it shows usage-ranked habits plus pinned
   favourites (falling back to the full list only when there is no history); typing
   switches the grid to search over every app, pinned apps included, with no result cap.

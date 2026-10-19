@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
@@ -84,6 +85,7 @@ import com.elthon.optilauncher.ui.theme.NbMotion
 import com.elthon.optilauncher.ui.theme.NbType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
@@ -308,7 +310,19 @@ private fun IslandBody(
     // allows. Its height is therefore the only figure that varies with content.
     val statusBarPx = WindowInsets.statusBars.getTop(density).toFloat()
     val navBarPx = WindowInsets.navigationBars.getBottom(density).toFloat()
-    val geometry = remember(density, screenWidth, screenHeight, instrumentHeightPx, statusBarPx, navBarPx) {
+    // The IME is a real bottom edge for the panel: while searching, the grid has to
+    // end above the keyboard instead of continuing underneath it, or half the list
+    // is unreachable no matter how far you scroll.
+    val imePx = WindowInsets.ime.getBottom(density).toFloat()
+    val geometry = remember(
+        density,
+        screenWidth,
+        screenHeight,
+        instrumentHeightPx,
+        statusBarPx,
+        navBarPx,
+        imePx
+    ) {
         val insetPx = with(density) { NbDim.ScreenInset.toPx() }
         val panelWidthPx = with(density) {
             (screenWidth - NbDim.ScreenInset * 2).coerceAtMost(NbDim.PanelMaxWidth).toPx()
@@ -328,10 +342,14 @@ private fun IslandBody(
         }
         val panelTopPx = if (sideBySide) topInsetPx else topInsetPx + instrumentPx + gapPx
 
-        val bottomRoom = screenHeightPx - panelTopPx - with(density) { 24.dp.toPx() }
+        // Bottom of the usable area: above the keyboard when it is up, above the
+        // gesture bar when it is not.
+        val usableBottomPx = screenHeightPx - max(navBarPx, imePx)
+        val bottomRoom = usableBottomPx - panelTopPx - with(density) { 24.dp.toPx() }
         val minPanelPx = with(density) { 220.dp.toPx() }
         val maxPanelPx = bottomRoom.coerceAtLeast(minPanelPx)
-        val preferredPx = screenHeightPx * 0.52f
+        // A little taller than before so a search shows more than three rows.
+        val preferredPx = screenHeightPx * 0.62f
         val panelHeightPx = preferredPx.coerceIn(minPanelPx, maxPanelPx)
 
         IslandGeometry(

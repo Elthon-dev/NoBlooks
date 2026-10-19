@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,6 +24,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -109,6 +111,11 @@ fun AppsPage(
         }
     }
 
+    // A new query is a new list: start it at the best match instead of inheriting
+    // the previous scroll offset, which made short result sets land mid-list.
+    val gridState = rememberLazyGridState()
+    LaunchedEffect(query) { gridState.scrollToItem(0) }
+
     // Habits in usage-rank order, then pinned favourites the ranking missed.
     val habitApps = remember(apps, pinned, habitPackages, byPackage) {
         val seen = HashSet<String>()
@@ -188,7 +195,10 @@ fun AppsPage(
 
         // --- results -------------------------------------------------------
         LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
+            // Adaptive rather than fixed: four columns on a phone-width panel so a
+            // search shows ~20 results before scrolling, three on narrow screens.
+            columns = GridCells.Adaptive(minSize = 84.dp),
+            state = gridState,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
@@ -320,7 +330,7 @@ private fun AppCell(
                     onLongPress = { onTogglePin() }
                 )
             }
-            .padding(vertical = 10.dp, horizontal = 6.dp),
+            .padding(vertical = 8.dp, horizontal = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
