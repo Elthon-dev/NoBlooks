@@ -122,7 +122,7 @@ object NbMotion {
     val enterSpring: SpringSpec<Float> = SpringSpec(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium)
 
     /** Silhouette closing: quicker still, so the launcher is never held hostage. */
-    val exitSpring: SpringSpec<Float> = SpringSpec(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumHigh)
+    val exitSpring: SpringSpec<Float> = SpringSpec(Spring.DampingRatioNoBouncy, stiffness = 2500f)
 
     /** Content settling inside a moving container. */
     val contentSpring: SpringSpec<Float> = SpringSpec(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium)

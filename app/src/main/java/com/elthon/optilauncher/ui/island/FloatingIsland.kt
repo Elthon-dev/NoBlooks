@@ -210,12 +210,12 @@ fun FloatingIsland(
                 enter = fadeIn(tween(NbMotion.Short4, easing = NbMotion.EmphasizedDecelerate)) +
                     expandVertically(
                         animationSpec = tween(NbMotion.Medium2, easing = NbMotion.EmphasizedDecelerate),
-                        expandFrom = Alignment.CenterStart
+                        expandFrom = Alignment.CenterVertically
                     ),
                 exit = fadeOut(tween(140, easing = NbMotion.EmphasizedAccelerate)) +
                     shrinkVertically(
                         animationSpec = tween(NbMotion.Short4, easing = NbMotion.EmphasizedAccelerate),
-                        shrinkTowards = Alignment.CenterStart
+                        shrinkTowards = Alignment.CenterVertically
                     )
             ) {
                 suggestion?.invoke()
