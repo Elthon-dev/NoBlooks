@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
@@ -16,9 +17,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -70,16 +70,26 @@ import com.elthon.optilauncher.ui.components.NbText
 import com.elthon.optilauncher.ui.components.TransientMessage
 import com.elthon.optilauncher.ui.theme.LocalNbColors
 import com.elthon.optilauncher.ui.theme.NbColors
+import com.elthon.optilauncher.ui.theme.NbDim
 import com.elthon.optilauncher.ui.theme.NbType
 
 /**
- * The signature floating island.
+ * The signature floating island — anchored at the bottom-left of the screen.
  *
- * One component, two states: a compact pill that morphs — width, height, corner
- * curvature, elevation, shadow, surface alpha and content opacity all driven by a
- * single spring progress — into a tall droplet-silhouette panel. Every geometry
- * property derives from that one progress value, so the animation stays
- * interruptible and coherent, and cheap: no per-frame subtree rebuilds, no blur.
+ * One component, two states: a compact pill that morphs into a panel. Every
+ * geometry property derives from a single spring progress, so the animation is
+ * interruptible and coherent. A second, slightly stiffer spring drives the
+ * content fade/slide, which lets the silhouette lead and the content settle
+ * after it — the small stagger that makes a morph read as physical rather than
+ * as two crossfades stacked on a timer.
+ *
+ * Motion follows the physics-based guidance: springs for state changes (they
+ * preserve velocity across interruptions), and the whole morph is anchored to the
+ * bottom-left so it grows from where it was instead of teleporting to a centre.
+ *
+ * Surface contract: solid colour, no border, depth from a soft drop shadow plus
+ * a faint top sheen. The scrim behind it is intentionally faint — it only has to
+ * push the wallpaper back a little.
  *
  * Layering contract:
  *  - the outside-tap scrim sits *below* the island stage, so panel touches are
@@ -111,8 +121,8 @@ fun FloatingIsland(
         // --- 1. outside tap surface (only while expanded) -------------------
         AnimatedVisibility(
             visible = state.isExpanded,
-            enter = if (reducedMotion) fadeIn(tween(0)) else fadeIn(tween(180)),
-            exit = if (reducedMotion) fadeOut(tween(0)) else fadeOut(tween(160)),
+            enter = if (reducedMotion) fadeIn(tween(0)) else fadeIn(tween(200)),
+            exit = if (reducedMotion) fadeOut(tween(0)) else fadeOut(tween(170)),
             modifier = Modifier.matchParentSize()
         ) {
             Box(
@@ -135,10 +145,10 @@ fun FloatingIsland(
         ) {
             Column(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 14.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .align(Alignment.BottomStart)
+                    .padding(start = NbDim.ScreenInset, bottom = 14.dp, end = NbDim.ScreenInset),
+                horizontalAlignment = Alignment.Start,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (message != null) {
                     TransientMessage(message = message)
@@ -175,35 +185,54 @@ private fun IslandBody(
     pageContent: @Composable (IslandPage) -> Unit
 ) {
     val transition = updateTransition(targetState = state.isExpanded, label = "island")
-    val progress by transition.animateFloat(
+
+    // Silhouette: soft, physical, interruptible.
+    val sizeProgress by transition.animateFloat(
         transitionSpec = {
             if (reducedMotion) {
-                tween(1)
+                tween(0)
             } else {
-                spring(dampingRatio = 0.90f, stiffness = Spring.StiffnessMediumLow)
+                spring(dampingRatio = 0.92f, stiffness = Spring.StiffnessMediumLow)
             }
         },
-        label = "islandProgress"
+        label = "islandSize"
     ) { expanded -> if (expanded) 1f else 0f }
 
-    val p = progress
+    // Content: snappier than the silhouette, so it settles without lagging.
+    val contentProgress by transition.animateFloat(
+        transitionSpec = {
+            if (reducedMotion) {
+                tween(0)
+            } else {
+                spring(dampingRatio = 1f, stiffness = Spring.StiffnessMedium)
+            }
+        },
+        label = "islandContent"
+    ) { expanded -> if (expanded) 1f else 0f }
+
+    val p = sizeProgress
+    val c = contentProgress
 
     // --- geometry: one lerp drives the whole silhouette ---------------------
-    val maxExpandedWidth = (screenWidth - 30.dp).coerceAtMost(440.dp).coerceAtLeast(240.dp)
-    val collapsedWidth = 148.dp
-    val collapsedHeight = 54.dp
-    val expandedHeight = (screenHeight * 0.64f).coerceAtMost(screenHeight - 40.dp).coerceAtLeast(300.dp)
+    val collapsedWidth = NbDim.PillWidth
+    val collapsedHeight = NbDim.PillHeight
+    val panelWidth = (screenWidth - NbDim.ScreenInset * 2)
+        .coerceAtMost(NbDim.PanelMaxWidth)
+        .coerceAtLeast(260.dp)
+    val panelHeight = (screenHeight * 0.50f)
+        .coerceAtMost(screenHeight - 210.dp)
+        .coerceAtLeast(280.dp)
 
-    val width = lerp(collapsedWidth, maxExpandedWidth, p)
-    val height = lerp(collapsedHeight, expandedHeight, p)
+    val width = lerp(collapsedWidth, panelWidth, p)
+    val height = lerp(collapsedHeight, panelHeight, p)
     val halfPill = height / 2
     val shape = RoundedCornerShape(
-        topStart = lerp(halfPill, 44.dp, p),
-        topEnd = lerp(halfPill, 44.dp, p),
-        bottomStart = lerp(halfPill, 34.dp, p),
-        bottomEnd = lerp(halfPill, 34.dp, p)
+        topStart = lerp(halfPill, NbDim.PanelCornerTop, p),
+        topEnd = lerp(halfPill, NbDim.PanelCornerTop, p),
+        bottomStart = lerp(halfPill, NbDim.PanelCornerBottom, p),
+        bottomEnd = lerp(halfPill, NbDim.PanelCornerBottom, p)
     )
-    val elevation = lerp(7.dp, 26.dp, p)
+    val elevation = lerp(10.dp, 20.dp, p)
 
     Box(
         modifier = Modifier
@@ -217,8 +246,7 @@ private fun IslandBody(
                 spotColor = colors.shadow
             )
             .clip(shape)
-            .background(colors.surface)
-            .border(BorderStroke(1.dp, colors.outline), shape)
+            .background(colors.surfaceSolid)
             .semantics {
                 contentDescription = if (state.isExpanded) {
                     "NoBlooks island, expanded, ${state.page.label} page"
@@ -247,16 +275,43 @@ private fun IslandBody(
                 }
             }
     ) {
+        // Faint top sheen: the cheap trick that makes a solid surface read as a
+        // physical object instead of a filled rectangle.
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = if (colors.isDark) {
+                            listOf(
+                                Color.White.copy(alpha = 0.055f),
+                                Color.Transparent
+                            )
+                        } else {
+                            listOf(
+                                Color.Black.copy(alpha = 0.035f),
+                                Color.Transparent
+                            )
+                        }
+                    )
+                )
+        )
+
         // --- collapsed face --------------------------------------------------
+        // Pinned to the bottom-left corner of the panel, which is exactly where
+        // the pill sits when collapsed, so the icons stay put while the
+        // silhouette grows up and to the right around them.
         if (p < 0.999f) {
             Row(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .align(Alignment.BottomStart)
+                    .width(collapsedWidth)
+                    .height(collapsedHeight)
                     .graphicsLayer {
                         alpha = (1f - p).coerceIn(0f, 1f)
-                        translationY = -14f * p
+                        translationY = 10f * p
                     }
-                    .padding(horizontal = 10.dp),
+                    .padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
@@ -268,10 +323,10 @@ private fun IslandBody(
                 )
                 Box(
                     Modifier
-                        .padding(horizontal = 2.dp)
-                        .size(4.dp)
+                        .padding(horizontal = 3.dp)
+                        .size(3.dp)
                         .clip(CircleShape)
-                        .background(colors.outline)
+                        .background(colors.onSurfaceDim)
                 )
                 MicGlyph(mic = mic, onClick = onMicAction, tint = colors.onSurface)
             }
@@ -283,8 +338,8 @@ private fun IslandBody(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        alpha = p.coerceIn(0f, 1f)
-                        translationY = 26f * (1f - p)
+                        alpha = c.coerceIn(0f, 1f)
+                        translationY = 14f * (1f - c)
                     }
             ) {
                 IslandTabs(
@@ -305,8 +360,8 @@ private fun IslandBody(
                             if (reducedMotion) {
                                 fadeIn(tween(0)) togetherWith fadeOut(tween(0))
                             } else {
-                                (fadeIn(tween(180)) + slideInHorizontally(tween(210)) { it * dir / 5 }) togetherWith
-                                    (fadeOut(tween(130)) + slideOutHorizontally(tween(160)) { -it * dir / 5 })
+                                (fadeIn(tween(200)) + slideInHorizontally(tween(230)) { it * dir / 5 }) togetherWith
+                                    (fadeOut(tween(140)) + slideOutHorizontally(tween(170)) { -it * dir / 5 })
                             }
                         },
                         label = "islandPages"
@@ -329,7 +384,7 @@ private fun IslandTabs(
 ) {
     val colors = LocalNbColors.current
     Row(
-        modifier = modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+        modifier = modifier.padding(horizontal = 6.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -342,14 +397,25 @@ private fun IslandTabs(
                 IslandPage.WALLPAPER -> Glyph.IMAGE
                 IslandPage.SETTINGS -> Glyph.SLIDERS
             }
+            // The active-tab wash fades in on a spring instead of snapping, so
+            // switching tabs feels like the panel breathing rather than a swap.
+            val wash by animateFloatAsState(
+                targetValue = if (active) 1f else 0f,
+                animationSpec = if (active) {
+                    spring(dampingRatio = 1f, stiffness = Spring.StiffnessMedium)
+                } else {
+                    tween(140)
+                },
+                label = "tabWash"
+            )
             Column(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .let { if (active) it.background(colors.surfaceSolid.copy(alpha = 0.55f)) else it }
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(colors.surfaceSolid.copy(alpha = 0.92f * wash))
                     .pointerInput(page) {
                         detectTapGestures { onSelect(page) }
                     }
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .padding(horizontal = 13.dp, vertical = 6.dp)
                     .semantics {
                         contentDescription = "${page.label} page"
                         onClick(label = "Open ${page.label} page") {
@@ -358,9 +424,9 @@ private fun IslandTabs(
                         }
                     },
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(3.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                IconGlyph(glyph, tint, Modifier.size(18.dp))
+                IconGlyph(glyph, tint, Modifier.size(NbDim.TabIcon))
                 NbText(page.label, style = NbType.tab, color = tint, maxLines = 1)
             }
         }
@@ -394,7 +460,7 @@ private fun MicGlyph(
     }
     Box(
         Modifier
-            .size(44.dp)
+            .size(NbDim.PillTapTarget)
             .pointerInput(Unit) { detectTapGestures { onClick() } }
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center
@@ -411,14 +477,14 @@ private fun MicGlyph(
                 ),
                 label = "micAlpha"
             )
-            IconGlyph(glyph, color, Modifier.size(20.dp).alpha(alpha))
+            IconGlyph(glyph, color, Modifier.size(NbDim.PillIcon).alpha(alpha))
         } else {
-            IconGlyph(glyph, color, Modifier.size(20.dp))
+            IconGlyph(glyph, color, Modifier.size(NbDim.PillIcon))
         }
     }
 }
 
-/** Icon-only tap target inside the collapsed pill (44dp, ripple-free). */
+/** Icon-only tap target inside the collapsed pill (uniform size, ripple-free). */
 @Composable
 private fun PillGlyph(
     glyph: Glyph,
@@ -428,12 +494,12 @@ private fun PillGlyph(
 ) {
     Box(
         Modifier
-            .size(44.dp)
+            .size(NbDim.PillTapTarget)
             .pointerInput(Unit) { detectTapGestures { onClick() } }
             .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center
     ) {
-        IconGlyph(glyph, tint, Modifier.size(19.dp))
+        IconGlyph(glyph, tint, Modifier.size(NbDim.PillIcon))
     }
 }
 

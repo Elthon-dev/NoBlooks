@@ -28,7 +28,6 @@ data class IslandState(
     val expansion: Expansion = Expansion.COLLAPSED,
     val page: IslandPage = IslandPage.APPS,
     val query: String = "",
-    val searchFocused: Boolean = false,
     val origin: IslandOrigin = IslandOrigin.TAP,
     val suggestionDismissed: Boolean = false
 ) {
@@ -39,7 +38,13 @@ sealed interface IslandEvent {
     /** Tap on the collapsed pill body. */
     data object Toggle : IslandEvent
 
-    /** Tap on the pill's search affordance: expand straight into Apps with focus. */
+    /**
+     * Tap on the pill's search affordance: expand straight into Apps.
+     *
+     * It deliberately does NOT focus the search field — a launcher that throws the
+     * keyboard up the instant the island opens is hostile. The keyboard only ever
+     * appears when the user taps the text field itself.
+     */
     data object SearchGesture : IslandEvent
 
     data object Expand : IslandEvent
@@ -57,7 +62,6 @@ sealed interface IslandEvent {
     data object AppLaunched : IslandEvent
 
     data class QueryChanged(val value: String) : IslandEvent
-    data object SearchFocusLost : IslandEvent
 
     /** Onboarding finished or was skipped: land collapsed on the home screen. */
     data object EnterHome : IslandEvent
@@ -72,14 +76,13 @@ sealed interface IslandEvent {
  *  - Back and OutsideTap collapse only; they never navigate or crash on a collapsed state.
  *  - Selecting a page never changes expansion (switching pages must not collapse).
  *  - Repeating any event is safe: states converge instead of corrupting.
- *  - Expanding via the search affordance focuses the search field; plain tap does not.
+ *  - No event ever summons the keyboard; only the user tapping the field does.
  */
 fun IslandState.reduce(event: IslandEvent): IslandState = when (event) {
     IslandEvent.Toggle -> when (expansion) {
         Expansion.COLLAPSED -> copy(
             expansion = Expansion.EXPANDED,
-            origin = IslandOrigin.TAP,
-            searchFocused = false
+            origin = IslandOrigin.TAP
         )
         Expansion.EXPANDED -> collapse()
     }
@@ -87,14 +90,12 @@ fun IslandState.reduce(event: IslandEvent): IslandState = when (event) {
     IslandEvent.SearchGesture -> copy(
         expansion = Expansion.EXPANDED,
         page = IslandPage.APPS,
-        origin = IslandOrigin.SEARCH_GESTURE,
-        searchFocused = true
+        origin = IslandOrigin.SEARCH_GESTURE
     )
 
     IslandEvent.Expand -> if (isExpanded) this else copy(
         expansion = Expansion.EXPANDED,
-        origin = IslandOrigin.ACCESSIBILITY,
-        searchFocused = false
+        origin = IslandOrigin.ACCESSIBILITY
     )
 
     IslandEvent.Collapse -> if (expansion == Expansion.COLLAPSED) this else collapse()
@@ -111,12 +112,9 @@ fun IslandState.reduce(event: IslandEvent): IslandState = when (event) {
 
     is IslandEvent.QueryChanged -> copy(query = event.value)
 
-    IslandEvent.SearchFocusLost -> if (searchFocused) copy(searchFocused = false) else this
-
     IslandEvent.EnterHome -> copy(
         expansion = Expansion.COLLAPSED,
         query = "",
-        searchFocused = false,
         origin = IslandOrigin.RESTORED
     )
 
@@ -125,7 +123,7 @@ fun IslandState.reduce(event: IslandEvent): IslandState = when (event) {
 
 fun IslandState.collapse(): IslandState =
     if (expansion == Expansion.COLLAPSED) this
-    else copy(expansion = Expansion.COLLAPSED, searchFocused = false)
+    else copy(expansion = Expansion.COLLAPSED)
 
 /** Tab index for the given page, for pager/transition math. */
 fun IslandPage.index(): Int = IslandPage.ordered.indexOf(this)

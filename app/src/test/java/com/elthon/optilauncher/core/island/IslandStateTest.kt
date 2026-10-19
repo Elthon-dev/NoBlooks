@@ -44,25 +44,16 @@ class IslandStateTest {
     }
 
     @Test
-    fun `search gesture expands into apps with focus`() {
+    fun `search gesture expands into apps without summoning the keyboard`() {
         val state = IslandState().reduce(IslandEvent.SearchGesture)
         assertTrue(state.isExpanded)
         assertEquals(IslandPage.APPS, state.page)
-        assertTrue(state.searchFocused)
         assertEquals(IslandOrigin.SEARCH_GESTURE, state.origin)
 
-        // Losing focus must keep the island open and the query intact.
+        // A query typed by the user survives; nothing about opening focuses the field.
         val typed = state.reduce(IslandEvent.QueryChanged("cam"))
-        val blurred = typed.reduce(IslandEvent.SearchFocusLost)
-        assertTrue(blurred.isExpanded)
-        assertEquals("cam", blurred.query)
-        assertFalse(blurred.searchFocused)
-    }
-
-    @Test
-    fun `plain tap does not focus search`() {
-        val state = IslandState().reduce(IslandEvent.Toggle)
-        assertFalse(state.searchFocused)
+        assertTrue(typed.isExpanded)
+        assertEquals("cam", typed.query)
     }
 
     @Test
@@ -81,7 +72,6 @@ class IslandStateTest {
         val home = busy.reduce(IslandEvent.EnterHome)
         assertFalse(home.isExpanded)
         assertEquals("", home.query)
-        assertFalse(home.searchFocused)
         assertEquals(IslandOrigin.RESTORED, home.origin)
     }
 

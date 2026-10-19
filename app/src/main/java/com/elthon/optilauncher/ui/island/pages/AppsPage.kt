@@ -25,24 +25,17 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.elthon.optilauncher.core.apps.AppRef
@@ -60,6 +53,7 @@ import com.elthon.optilauncher.ui.components.MonoButton
 import com.elthon.optilauncher.ui.components.NbText
 import com.elthon.optilauncher.ui.components.SectionLabel
 import com.elthon.optilauncher.ui.theme.LocalNbColors
+import com.elthon.optilauncher.ui.theme.NbDim
 import com.elthon.optilauncher.ui.theme.NbType
 
 /**
@@ -68,12 +62,14 @@ import com.elthon.optilauncher.ui.theme.NbType
  * Ordering is deliberately boring when there is no query: the prediction (when
  * it has real confidence) gets one prominent row, pinned favorites come next,
  * then everything alphabetical. No fabricated "trending" noise.
+ *
+ * The search field is a plain text field: it takes focus only when tapped, so
+ * opening the island never throws the keyboard up at the user.
  */
 @Composable
 fun AppsPage(
     apps: List<AppEntry>,
     query: String,
-    searchFocused: Boolean,
     pinned: Set<String>,
     prediction: Prediction,
     loading: Boolean,
@@ -81,18 +77,11 @@ fun AppsPage(
     onQueryChanged: (String) -> Unit,
     onLaunch: (AppEntry) -> Unit,
     onTogglePin: (AppRef) -> Unit,
-    onDismissFocus: () -> Unit,
     onPredictedOpen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalNbColors.current
-    val focusRequester = remember { FocusRequester() }
-
-    LaunchedEffect(searchFocused) {
-        if (searchFocused) {
-            focusRequester.requestFocus()
-        }
-    }
+    val keyboard = LocalSoftwareKeyboardController.current
 
     val searchResult = remember(apps, query) { AppSearch.search(apps.map { it.toRef() }, query) }
     val entriesByRef = remember(apps) { apps.associateBy { it.component.flattenToString() } }
@@ -107,10 +96,9 @@ fun AppsPage(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .padding(horizontal = NbDim.ContentInset, vertical = 10.dp)
                 .clip(RoundedCornerShape(14.dp))
-                .background(colors.surfaceSolid.copy(alpha = 0.60f))
-                .border(BorderStroke(1.dp, colors.outline), RoundedCornerShape(14.dp))
+                .background(colors.surfaceSolid)
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -121,15 +109,6 @@ fun AppsPage(
                 onValueChange = onQueryChanged,
                 modifier = Modifier
                     .weight(1f)
-                    .focusRequester(focusRequester)
-                    .onKeyEvent { event ->
-                        if (event.type == KeyEventType.KeyUp && event.key == Key.Escape) {
-                            onDismissFocus()
-                            true
-                        } else {
-                            false
-                        }
-                    }
                     .semantics { contentDescription = "Search installed apps" },
                 textStyle = NbType.body.copy(color = colors.onSurface),
                 cursorBrush = SolidColor(colors.accent),
@@ -138,7 +117,7 @@ fun AppsPage(
                     keyboardType = KeyboardType.Text,
                     imeAction = ImeAction.Search
                 ),
-                keyboardActions = KeyboardActions(onSearch = { onDismissFocus() })
+                keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() })
             )
             if (query.isNotEmpty()) {
                 IconTap(
@@ -157,7 +136,7 @@ fun AppsPage(
                 EmptyState(
                     title = "Reading installed apps…",
                     description = "The launcher asks Android for launchable activities. Nothing leaves the phone.",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 28.dp)
+                    modifier = Modifier.padding(horizontal = NbDim.ContentInset, vertical = 28.dp)
                 )
             } else if (query.isNotBlank() && matches.isEmpty()) {
                 val noApps = searchResult.reason == SearchResult.EmptyReason.NO_APPS
@@ -168,7 +147,7 @@ fun AppsPage(
                     } else {
                         "Nothing on this device matches \"$query\"."
                     },
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 28.dp)
+                    modifier = Modifier.padding(horizontal = NbDim.ContentInset, vertical = 28.dp)
                 )
             } else {
                 if (query.isBlank() && prediction.hasPrediction) {
@@ -176,7 +155,7 @@ fun AppsPage(
                         prediction = prediction,
                         iconFor = iconFor,
                         onOpen = onPredictedOpen,
-                        modifier = Modifier.padding(horizontal = 16.dp)
+                        modifier = Modifier.padding(horizontal = NbDim.ContentInset)
                     )
                 }
 
@@ -190,14 +169,14 @@ fun AppsPage(
                 if (pinnedApps.isNotEmpty()) {
                     SectionLabel(
                         "Pinned",
-                        Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp)
+                        Modifier.padding(start = NbDim.ContentInset, end = NbDim.ContentInset, top = 12.dp, bottom = 6.dp)
                     )
                     AppGrid(pinnedApps, pinned, iconFor, onLaunch, onTogglePin)
                 }
                 if (rest.isNotEmpty()) {
                     SectionLabel(
                         if (query.isNotBlank()) "${rest.size} results" else "All apps",
-                        Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp)
+                        Modifier.padding(start = NbDim.ContentInset, end = NbDim.ContentInset, top = 12.dp, bottom = 6.dp)
                     )
                     AppGrid(rest, pinned, iconFor, onLaunch, onTogglePin)
                 }
@@ -224,6 +203,7 @@ private fun AppGrid(
     ) {
         items(apps, key = { it.component.flattenToString() }) { app ->
             AppCell(
+                modifier = Modifier.animateItem(),
                 app = app,
                 pinned = app.packageName in pinned,
                 iconFor = iconFor,
@@ -240,11 +220,12 @@ private fun AppCell(
     pinned: Boolean,
     iconFor: (String) -> ImageBitmap?,
     onLaunch: () -> Unit,
-    onTogglePin: () -> Unit
+    onTogglePin: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val colors = LocalNbColors.current
     Column(
-        modifier = Modifier
+        modifier = modifier
             .padding(4.dp)
             .clip(RoundedCornerShape(16.dp))
             .pointerInput(app.packageName) {
@@ -298,8 +279,7 @@ private fun PredictionRow(
             .fillMaxWidth()
             .padding(top = 4.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(colors.surfaceSolid.copy(alpha = 0.45f))
-            .border(BorderStroke(1.dp, colors.outline), RoundedCornerShape(16.dp))
+            .background(colors.surfaceSolid)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)

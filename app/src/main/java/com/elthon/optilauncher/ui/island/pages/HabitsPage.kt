@@ -1,9 +1,7 @@
 package com.elthon.optilauncher.ui.island.pages
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,6 +30,7 @@ import com.elthon.optilauncher.ui.components.NbText
 import com.elthon.optilauncher.ui.components.SectionLabel
 import com.elthon.optilauncher.ui.components.StatBar
 import com.elthon.optilauncher.ui.theme.LocalNbColors
+import com.elthon.optilauncher.ui.theme.NbDim
 import com.elthon.optilauncher.ui.theme.NbType
 
 /**
@@ -64,7 +63,7 @@ fun HabitsPage(
                     "Collecting launcher activity…"
                 },
                 description = "Bounded window, up to 7 days, capped event scan. Results update in place.",
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 28.dp)
+                modifier = Modifier.padding(horizontal = NbDim.ContentInset, vertical = 28.dp)
             )
 
             summary == null || (!hasLocalHistory && usageAccess != UsageAccess.GRANTED) -> EmptyState(
@@ -75,7 +74,7 @@ fun HabitsPage(
                     "Grant usage access for the real picture, or just use the launcher — " +
                         "its own launch log is honest but limited."
                 },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 28.dp),
+                modifier = Modifier.padding(horizontal = NbDim.ContentInset, vertical = 28.dp),
                 action = {
                     if (usageAccess != UsageAccess.GRANTED) {
                         MonoButton(
@@ -89,24 +88,24 @@ fun HabitsPage(
 
             else -> {
                 val data = summary ?: return@Column
-                TotalsRow(data, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                TotalsRow(data, Modifier.padding(horizontal = NbDim.ContentInset, vertical = 6.dp))
 
                 SectionLabel(
                     "Prediction",
-                    Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp)
+                    Modifier.padding(start = NbDim.ContentInset, end = NbDim.ContentInset, top = 14.dp, bottom = 6.dp)
                 )
                 PredictionCard(
                     prediction = data.prediction,
                     labelFor = labelFor,
                     iconFor = iconFor,
                     onOpenDetails = { pkg -> if (pkg != null) onAppDetails(pkg) },
-                    modifier = Modifier.padding(horizontal = 16.dp)
+                    modifier = Modifier.padding(horizontal = NbDim.ContentInset)
                 )
 
                 if (data.topApps.isNotEmpty()) {
                     SectionLabel(
                         "Most used",
-                        Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 2.dp)
+                        Modifier.padding(start = NbDim.ContentInset, end = NbDim.ContentInset, top = 16.dp, bottom = 2.dp)
                     )
                     data.topApps.take(8).forEach { scored ->
                         HabitRow(
@@ -117,7 +116,7 @@ fun HabitsPage(
                             labelFor = labelFor,
                             iconFor = iconFor,
                             onClick = { onAppDetails(scored.packageName) },
-                            modifier = Modifier.padding(horizontal = 16.dp)
+                            modifier = Modifier.padding(horizontal = NbDim.ContentInset)
                         )
                     }
                 }
@@ -139,7 +138,7 @@ fun HabitsPage(
                     },
                     style = NbType.mono,
                     color = colors.onSurfaceDim,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
+                    modifier = Modifier.padding(horizontal = NbDim.ContentInset, vertical = 16.dp)
                 )
             }
         }
@@ -183,10 +182,9 @@ private fun StatCell(
     val colors = LocalNbColors.current
     Column(
         modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(colors.surfaceSolid.copy(alpha = 0.45f))
-            .border(BorderStroke(1.dp, colors.outline), RoundedCornerShape(14.dp))
-            .padding(horizontal = 10.dp, vertical = 10.dp),
+            .clip(RoundedCornerShape(16.dp))
+            .background(colors.surfaceSolid)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         NbText(label.uppercase(), style = NbType.label, color = colors.onSurfaceDim, maxLines = 1)
@@ -207,10 +205,9 @@ private fun PredictionCard(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(colors.surfaceSolid.copy(alpha = 0.45f))
-            .border(BorderStroke(1.dp, colors.outline), RoundedCornerShape(16.dp))
-            .padding(12.dp),
+            .clip(RoundedCornerShape(18.dp))
+            .background(colors.surfaceSolid)
+            .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {

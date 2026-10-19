@@ -6,7 +6,7 @@
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/opti_black"
+    android:background="@android:color/transparent"
     android:clipToPadding="false">
 
     <LinearLayout
@@ -130,7 +130,7 @@
         android:id="@+id/firstRunOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@color/opti_black"
+        android:background="@android:color/transparent"
         android:visibility="gone">
 
         <ImageView

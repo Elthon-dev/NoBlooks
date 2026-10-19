@@ -1,7 +1,9 @@
 package com.elthon.optilauncher.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -117,7 +119,11 @@ fun MonoButton(
     val colors = LocalNbColors.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, tween(110), label = "btnScale")
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.965f else 1f,
+        animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessHigh),
+        label = "btnScale"
+    )
 
     val background = when {
         primary -> colors.accent.copy(alpha = if (pressed) 0.88f else 0.92f)
@@ -162,7 +168,11 @@ fun IconTap(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val alpha by animateFloatAsState(if (pressed) 0.55f else 1f, tween(110), label = "iconAlpha")
+    val alpha by animateFloatAsState(
+        targetValue = if (pressed) 0.55f else 1f,
+        animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessHigh),
+        label = "iconAlpha"
+    )
     Box(
         modifier = modifier
             .size(44.dp)
@@ -239,7 +249,11 @@ fun MonoSwitch(
     contentDescription: String? = null
 ) {
     val colors = LocalNbColors.current
-    val progress by animateFloatAsState(if (checked) 1f else 0f, tween(160), label = "switch")
+    val progress by animateFloatAsState(
+        targetValue = if (checked) 1f else 0f,
+        animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMedium),
+        label = "switch"
+    )
     val trackColor = if (checked) colors.accent else colors.outline
     Box(
         modifier = modifier
@@ -468,7 +482,11 @@ fun StatBar(
     height: Dp = 4.dp
 ) {
     val colors = LocalNbColors.current
-    val animated by animateFloatAsState(fraction.coerceIn(0f, 1f), tween(260), label = "bar")
+    val animated by animateFloatAsState(
+        targetValue = fraction.coerceIn(0f, 1f),
+        animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessLow),
+        label = "bar"
+    )
     Box(
         modifier
             .fillMaxWidth()

@@ -89,14 +89,14 @@ data class LauncherTheme(
             isDark = mode != ThemeMode.LIGHT,
             source = PaletteSource.FALLBACK,
             wallpaperLuminance = 0.35f,
-            surface = if (mode == ThemeMode.LIGHT) 0xFFFFFFFF.toInt() else 0xFF0B0B0C.toInt(),
-            surfaceAlpha = if (mode == ThemeMode.LIGHT) 0.86f else 0.82f,
-            surfaceSolid = if (mode == ThemeMode.LIGHT) 0xFFF6F6F7.toInt() else 0xFF121214.toInt(),
+            surface = if (mode == ThemeMode.LIGHT) 0xFFFFFFFF.toInt() else 0xFF101012.toInt(),
+            surfaceAlpha = 1f,
+            surfaceSolid = if (mode == ThemeMode.LIGHT) 0xFFF6F6F7.toInt() else 0xFF17171A.toInt(),
             onSurface = if (mode == ThemeMode.LIGHT) 0xFF0A0A0B.toInt() else 0xFFF4F4F6.toInt(),
             onSurfaceDim = if (mode == ThemeMode.LIGHT) 0xFF5A5A60.toInt() else 0xFF9A9AA2.toInt(),
             outline = if (mode == ThemeMode.LIGHT) 0x33000000 else 0x33FFFFFF,
-            shadow = 0x66000000,
-            scrim = if (mode == ThemeMode.LIGHT) 0x14000000 else 0x4D000000,
+            shadow = if (mode == ThemeMode.LIGHT) 0x4D000000 else 0xB3000000.toInt(),
+            scrim = if (mode == ThemeMode.LIGHT) 0x0F000000 else 0x2B000000,
             accent = if (mode == ThemeMode.LIGHT) 0xFF4A4A52.toInt() else 0xFFD8D8DE.toInt(),
             textContrast = 15f
         )
@@ -178,11 +178,12 @@ object ThemeDeriver {
         accentInput: Int?,
         source: PaletteSource
     ): LauncherTheme {
-        // Panel tint follows brightness: translucent black over dark wallpapers,
-        // translucent white over bright ones, so the wallpaper reads through either way.
-        val surface = if (isDark) 0xFF08080A.toInt() else 0xFFFFFFFF.toInt()
-        val surfaceAlpha = if (isDark) 0.84f else 0.88f
-        val surfaceSolid = if (isDark) 0xFF121214.toInt() else 0xFFF5F5F6.toInt()
+        // The island is a solid, fully opaque surface — no wallpaper bleed through
+        // the panel. Depth comes from a soft drop shadow, not from transparency,
+        // which is also what keeps text contrast predictable on any wallpaper.
+        val surface = if (isDark) 0xFF101013.toInt() else 0xFFFFFFFF.toInt()
+        val surfaceAlpha = 1f
+        val surfaceSolid = if (isDark) 0xFF17171A.toInt() else 0xFFF2F2F3.toInt()
 
         val panel = ColorMath.blend(ColorMath.withAlpha(surface, surfaceAlpha), grayAt(luminance), surfaceAlpha)
         var onSurface = if (isDark) 0xFFF5F5F7.toInt() else 0xFF0B0B0C.toInt()
@@ -200,7 +201,9 @@ object ThemeDeriver {
 
         val accent = accentFrom(accentInput, panel, isDark)
         val outline = if (isDark) 0x2EFFFFFF else 0x2A000000
-        val scrim = if (isDark) 0x59000000 else 0x1F000000
+        // Kept deliberately faint: the scrim only has to make the wallpaper recede
+        // a little behind the expanded island, not paint the screen black.
+        val scrim = if (isDark) 0x2B000000 else 0x0F000000
 
         return LauncherTheme(
             mode = mode,
@@ -213,7 +216,7 @@ object ThemeDeriver {
             onSurface = onSurface,
             onSurfaceDim = onSurfaceDim,
             outline = outline,
-            shadow = if (isDark) 0x99000000.toInt() else 0x52000000,
+            shadow = if (isDark) 0xB3000000.toInt() else 0x4D000000,
             scrim = scrim,
             accent = accent,
             textContrast = contrast

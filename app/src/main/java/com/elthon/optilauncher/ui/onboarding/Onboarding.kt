@@ -1,8 +1,6 @@
 package com.elthon.optilauncher.ui.onboarding
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,6 +21,7 @@ import com.elthon.optilauncher.ui.components.MonoButton
 import com.elthon.optilauncher.ui.components.NbText
 import com.elthon.optilauncher.ui.components.SectionLabel
 import com.elthon.optilauncher.ui.theme.LocalNbColors
+import com.elthon.optilauncher.ui.theme.NbDim
 import com.elthon.optilauncher.ui.theme.NbType
 
 /**
@@ -43,22 +42,20 @@ fun Onboarding(
     val colors = LocalNbColors.current
     Column(
         modifier = modifier
-            .widthIn(max = 380.dp)
+            .widthIn(max = 372.dp)
             .padding(horizontal = 22.dp)
-            .clip(RoundedCornerShape(28.dp))
+            .clip(RoundedCornerShape(NbDim.WidgetCorner))
             .background(colors.surfaceSolid)
-            .border(BorderStroke(1.dp, colors.outline), RoundedCornerShape(28.dp))
-            .padding(20.dp),
+            .padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        NbText("NoBlooks", style = NbType.title, color = colors.onSurface)
         NbText(
-            "A wallpaper-first home screen: one floating island, monochrome, everything on-device.",
-            style = NbType.bodySmall,
-            color = colors.onSurfaceDim
+            "One floating island. Monochrome, wallpaper-reactive, everything on-device.",
+            style = NbType.body,
+            color = colors.onSurface
         )
 
-        SectionLabel("Setup")
+        SectionLabel("Finish setup")
         SetupRow(
             glyph = Glyph.HOME,
             title = if (isDefaultHome) "Home app: done" else "Make NoBlooks your home app",
@@ -93,7 +90,7 @@ fun Onboarding(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            MonoButton("Start using NoBlooks", onClick = onFinish, primary = true)
+            MonoButton("Done", onClick = onFinish, primary = true)
             Chip("No accounts · no network", accent = false)
         }
         NbText(

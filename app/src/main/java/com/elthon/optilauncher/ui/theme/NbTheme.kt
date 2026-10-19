@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.elthon.optilauncher.core.theme.LauncherTheme
 import com.elthon.optilauncher.core.theme.ThemeMode
@@ -49,17 +50,64 @@ fun LauncherTheme.toNbColors(): NbColors = NbColors(
 
 val LocalNbColors = staticCompositionLocalOf { LauncherTheme.fallback(ThemeMode.AUTO).toNbColors() }
 
+/**
+ * Shared geometry tokens.
+ *
+ * The home widget and the floating island deliberately share one screen inset and
+ * one corner rhythm, so the two surfaces on the wallpaper read as a set instead of
+ * two unrelated cards.
+ */
+object NbDim {
+    /** Left/right inset used by every surface drawn on the wallpaper. */
+    val ScreenInset = 16.dp
+
+    /** Collapsed island pill. */
+    val PillWidth = 122.dp
+    val PillHeight = 48.dp
+    val PillIcon = 20.dp
+    val PillTapTarget = 40.dp
+
+    /** Expanded panel. */
+    val PanelMaxWidth = 372.dp
+    val PanelMaxHeight = 430.dp
+    val PanelCornerTop = 30.dp
+    val PanelCornerBottom = 24.dp
+
+    /** Horizontal content inset inside every island page. */
+    val ContentInset = 16.dp
+    val ControlGap = 10.dp
+    val TabIcon = 18.dp
+
+    /** Home widget card. */
+    val WidgetCorner = 26.dp
+    val WidgetPadding = 18.dp
+}
+
+
 object NbType {
     val clock = TextStyle(
-        fontSize = 58.sp,
+        fontSize = 52.sp,
         fontWeight = FontWeight.Light,
-        letterSpacing = (-1).sp,
+        letterSpacing = (-1.5).sp,
         fontFamily = FontFamily.SansSerif
     )
     val clockLabel = TextStyle(
         fontSize = 11.sp,
         fontWeight = FontWeight.Medium,
         letterSpacing = 2.sp,
+        fontFamily = FontFamily.Monospace
+    )
+    /** Small live values inside the widget card (battery, ring readout). */
+    val widgetValue = TextStyle(
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 0.4.sp,
+        fontFamily = FontFamily.Monospace
+    )
+    val weekday = TextStyle(
+        fontSize = 9.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 1.1.sp,
         fontFamily = FontFamily.Monospace
     )
     val title = TextStyle(
