@@ -87,17 +87,20 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // HOME was pressed again: refresh what can have changed outside.
+        // HOME was pressed again. This is the return path, so it must stay cheap:
+        // the app list comes from the repository cache and the system re-probes run
+        // off the main thread. No forced usage-history scan here.
         viewModel.refreshApps()
-        viewModel.refreshHomeRole()
-        viewModel.recheckUsageAccess()
+        viewModel.onReturnedHome()
     }
 
     override fun onResume() {
         super.onResume()
-        // The user may be returning from Usage Access / Home Role / permission UIs.
-        viewModel.refreshHomeRole()
-        viewModel.recheckUsageAccess()
+        // The user may be returning from Usage Access / Home Role / permission UIs,
+        // or from any app. Keep the resume path minimal and non-blocking: the system
+        // re-probes run off the main thread and the habit data is only reloaded when
+        // its cache is actually stale.
+        viewModel.onReturnedHome()
         systemReducedMotion = animationsDisabled()
         hideStatusBar()
         // Returning from an app or the switcher: fade the home screen in. The

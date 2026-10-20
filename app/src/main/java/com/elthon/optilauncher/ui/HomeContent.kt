@@ -248,6 +248,7 @@ fun HomeContent(
                             micPermissionLabel = ui.mic.detail ?: ui.mic.state.name.lowercase(),
                             isDefaultHome = ui.isDefaultHome,
                             homeRoleNote = ui.homeRoleNote,
+                            oemPolicy = ui.oemPolicy,
                             pinnedCount = ui.settings.favorites.size,
                             appsCount = ui.apps.size,
                             historyDays = ui.habitSummary?.historyDays ?: 0,
@@ -269,6 +270,7 @@ fun HomeContent(
                                 }
                             },
                             onOpenHomeSettings = viewModel::openHomeSettings,
+                            onOpenBackgroundPolicySettings = viewModel::openBackgroundPolicySettings,
                             onAppDetails = { viewModel.openAppDetails() },
                             onClearHistory = viewModel::clearHabitHistory,
                             onClearFavorites = viewModel::clearFavorites

@@ -171,6 +171,44 @@ class AppLauncher(context: Context) {
         false
     }
 
+    /**
+     * Opens the system's battery/background settings for *this* app.
+     *
+     * This is the one action that actually helps the "blank wallpaper for seconds
+     * when returning Home" problem on ColorOS/OxygenOS: those ROMs aggressively
+     * freeze and kill background processes (dontkillmyapp.com/oppo), so returning
+     * Home is often a cold restart. No launcher code can override an OEM process
+     * killer — but the user can exempt this app, and this is where they do it.
+     *
+     * Preference order: the app's own battery page (API 33+ has a per-app intent;
+     * below that, the app-details page carries the battery entry), then the general
+     * battery-optimization list. Nothing here is hidden-API or reflection.
+     */
+    fun openAppBatterySettings(packageName: String): Boolean {
+        val candidates = listOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                Intent(android.provider.Settings.ACTION_APP_BATTERY_SETTINGS)
+                    .setData(android.net.Uri.parse("package:$packageName"))
+            } else {
+                Intent(
+                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:$packageName")
+                )
+            },
+            Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+            Intent(Intent.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName"))
+        )
+        for (intent in candidates) {
+            try {
+                appContext.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return true
+            } catch (_: Throwable) {
+                // Try the next, less specific target.
+            }
+        }
+        return false
+    }
+
     companion object {
         private const val TAG = "AppLauncher"
 

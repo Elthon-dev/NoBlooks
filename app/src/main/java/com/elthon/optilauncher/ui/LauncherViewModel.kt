@@ -24,6 +24,7 @@ import com.elthon.optilauncher.core.settings.SettingsRepository
 import com.elthon.optilauncher.core.settings.SettingsState
 import com.elthon.optilauncher.core.theme.LauncherTheme
 import com.elthon.optilauncher.core.theme.ThemeMode
+import com.elthon.optilauncher.core.util.OemBackgroundPolicy
 import com.elthon.optilauncher.data.AppEntry
 import com.elthon.optilauncher.data.AppLauncher
 import com.elthon.optilauncher.data.AppRepository
@@ -68,7 +69,13 @@ data class LauncherUiState(
     val message: String? = null,
     val isDefaultHome: Boolean = false,
     val homeRoleNote: String = "Checking home role…",
-    val onboardingComplete: Boolean = false
+    val onboardingComplete: Boolean = false,
+    /**
+     * The OEM background-killing policy for this device. Surfaced so the Settings
+     * page can offer the one action that actually helps the ColorOS-style "blank
+     * wallpaper on return to Home" delay. Never claims whether the app is exempt.
+     */
+    val oemPolicy: OemBackgroundPolicy = OemBackgroundPolicy.NONE
 )
 
 /**
@@ -102,7 +109,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(
                 settings = settings,
                 onboardingComplete = settings.onboardingComplete,
-                island = it.island.copy(page = settings.lastPage)
+                island = it.island.copy(page = settings.lastPage),
+                oemPolicy = OemBackgroundPolicy.classify(
+                    android.os.Build.MANUFACTURER,
+                    android.os.Build.BRAND
+                )
             )
         }
 
@@ -392,10 +403,51 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    /** Re-probes access; called when the user returns from the system screen. */
+    /**
+     * Re-probes access; called when the user returns from the system screen.
+     *
+     * The expensive part of a habit refresh is `queryEvents` over a week of history,
+     * so a full forced reload only happens when the *access* state actually changed
+     * (in which case the cached data is meaningless). A plain resume, where nothing
+     * changed, reuses the 90s cache instead of throwing it away — which is what made
+     * every return-to-home re-scan the whole history on the way in.
+     */
     fun recheckUsageAccess() {
-        update { it.copy(usageAccess = usageRepo.access()) }
-        refreshHabits(force = true)
+        val before = _ui.value.usageAccess
+        val access = usageRepo.access()
+        update { it.copy(usageAccess = access) }
+        if (access != before) {
+            refreshHabits(force = true)
+        } else {
+            // Access unchanged: let the repository serve its cache if it is fresh.
+            refreshHabits(force = false)
+        }
+    }
+
+    /**
+     * The cheap "came back to the home screen" path.
+     *
+     * Called from `onResume`, which fires on every return from an app, so it must not
+     * do anything proportional to the device's usage history or app count. It re-reads
+     * the two cheap system states and lets the repositories decide whether a refresh
+     * is actually warranted — never a forced full scan.
+     */
+    fun onReturnedHome() {
+        viewModelScope.launch {
+            // Both probes are binder calls; keep them off the main thread so the
+            // first frame after the transition is never waiting on system state.
+            val access = withContext(Dispatchers.IO) { usageRepo.access() }
+            val role = withContext(Dispatchers.IO) { PermissionStatus.homeRoleState(getApplication()) }
+            update {
+                it.copy(
+                    usageAccess = access,
+                    isDefaultHome = role.roleHeld == true,
+                    homeRoleNote = homeRoleNote(role)
+                )
+            }
+            // Only a stale cache is refreshed here; a fresh one is simply reused.
+            refreshHabits(force = false)
+        }
     }
 
     fun openWallpaperPicker() {
@@ -414,6 +466,20 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         showMessage("Pick NoBlooks as your home app")
     }
 
+    /**
+     * Opens the battery/background settings for this app. On ColorOS/OxygenOS this is
+     * the only thing that reduces the return-to-Home delay, because the delay is the
+     * ROM suspending or killing the launcher process — not anything this app renders.
+     */
+    fun openBackgroundPolicySettings() {
+        val pkg = getApplication<Application>().packageName
+        val opened = appLauncher.openAppBatterySettings(pkg)
+        showMessage(
+            if (opened) "Allow NoBlooks to run in the background"
+            else "No battery settings screen on this device"
+        )
+    }
+
     fun openAppDetails(packageName: String = getApplication<Application>().packageName) {
         val opened = appLauncher.openAppDetails(packageName)
         if (!opened) showMessage("No app-details screen available")
@@ -427,15 +493,19 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refreshHomeRole() {
-        val state = PermissionStatus.homeRoleState(getApplication())
-        val note = when {
-            state.hasError -> "Home-role probe unavailable on this device"
-            state.roleHeld == true -> "NoBlooks holds the home role."
-            state.roleAvailable == true -> "Tap to make NoBlooks your home app."
-            state.roleAvailable == false -> "No app currently holds the home role."
-            else -> "Home role unknown on this device."
+        viewModelScope.launch {
+            // RoleManager probing is several binder calls; never on the main thread.
+            val state = withContext(Dispatchers.IO) { PermissionStatus.homeRoleState(getApplication()) }
+            update { it.copy(isDefaultHome = state.roleHeld == true, homeRoleNote = homeRoleNote(state)) }
         }
-        update { it.copy(isDefaultHome = state.roleHeld == true, homeRoleNote = note) }
+    }
+
+    private fun homeRoleNote(state: com.elthon.optilauncher.recon.HomeRoleState): String = when {
+        state.hasError -> "Home-role probe unavailable on this device"
+        state.roleHeld == true -> "NoBlooks holds the home role."
+        state.roleAvailable == true -> "Tap to make NoBlooks your home app."
+        state.roleAvailable == false -> "No app currently holds the home role."
+        else -> "Home role unknown on this device."
     }
 
     // ------------------------------------------------------------ microphone

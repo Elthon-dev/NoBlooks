@@ -81,6 +81,8 @@
             android:resizeableActivity="true"
             android:windowSoftInputMode="adjustResize"
             android:enableOnBackInvokedCallback="true"
+            android:alwaysRetainTaskState="true"
+            android:stateNotNeeded="false"
             android:theme="@style/Theme.OptiLauncher">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

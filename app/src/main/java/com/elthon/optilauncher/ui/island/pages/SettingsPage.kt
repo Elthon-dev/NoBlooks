@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.elthon.optilauncher.core.habits.HabitSummary
 import com.elthon.optilauncher.core.settings.IconTreatment
 import com.elthon.optilauncher.core.theme.ThemeMode
+import com.elthon.optilauncher.core.util.OemBackgroundPolicy
 import com.elthon.optilauncher.data.UsageAccess
 import com.elthon.optilauncher.ui.components.Glyph
 import com.elthon.optilauncher.ui.components.Hairline
@@ -47,6 +48,7 @@ fun SettingsPage(
     micPermissionLabel: String,
     isDefaultHome: Boolean,
     homeRoleNote: String,
+    oemPolicy: OemBackgroundPolicy,
     pinnedCount: Int,
     appsCount: Int,
     historyDays: Int,
@@ -57,6 +59,7 @@ fun SettingsPage(
     onGrantUsageAccess: () -> Unit,
     onMicPermissionAction: () -> Unit,
     onOpenHomeSettings: () -> Unit,
+    onOpenBackgroundPolicySettings: () -> Unit,
     onAppDetails: () -> Unit,
     onClearHistory: () -> Unit,
     onClearFavorites: () -> Unit,
@@ -148,6 +151,22 @@ fun SettingsPage(
             },
             onClick = onOpenHomeSettings
         )
+        if (oemPolicy.wantsKeepAliveHint) {
+            OptionRow(
+                title = "Keep alive in the background",
+                description = when (oemPolicy) {
+                    OemBackgroundPolicy.COLOROS_FAMILY ->
+                        "This ROM (ColorOS/OxygenOS family) suspends third-party " +
+                            "launchers; returning Home can show a blank stretch first. " +
+                            "Exempting NoBlooks is the only fix — it is a system behaviour."
+
+                    else ->
+                        "This ROM has an aggressive battery manager. Exempting NoBlooks " +
+                            "keeps Home instant after leaving an app."
+                },
+                onClick = onOpenBackgroundPolicySettings
+            )
+        }
 
         Hairline(Modifier.padding(vertical = 14.dp))
         SectionLabel("Diagnostics", Modifier.padding(horizontal = 16.dp, vertical = 6.dp))

@@ -115,6 +115,22 @@ called out as **unverified** rather than claimed as working.
   every installed app at launch. A not-yet-rendered icon is the monochrome placeholder.
 - Returning from an app fades the home screen in (~250ms, from ~0.72 alpha), once per
   resume-from-stopped; the cold-launch resume is skipped, as is reduced motion.
+- **The resume path stays cheap.** `onResume`/`onNewIntent` go through
+  `LauncherViewModel.onReturnedHome()`, which re-probes only cheap system state (off
+  the main thread) and lets the repositories serve their caches. It must never force a
+  full usage-history scan: `recheckUsageAccess()` only forces one when the access
+  state actually changed. A 7-day `queryEvents` on every return-to-Home was throwing
+  away the usage cache each time and is gone. The activity sets
+  `alwaysRetainTaskState="true"` so the task survives as long as the process does.
+- **The ColorOS/OxygenOS return delay is a system behaviour, not ours.** On
+  OPPO/OnePlus/Realme ROMs, third-party launchers show a blank-wallpaper stretch when
+  swiping Home, with gesture navigation only (3-button is instant), and it affects
+  Nova/Niagara/Microsoft alike — the ROM suspends or kills the launcher process and
+  the stock launcher owns the home transition. No supported app-level API overrides
+  it. The Settings page therefore offers a keep-alive hint
+  (`core/util/OemBackgroundPolicy.kt`, detected from `Build.MANUFACTURER`/`BRAND`) that
+  deep-links to this app's battery settings. The hint says "may" and never claims the
+  exemption is on — that state is not readable.
 - Surfaces are **solid colour** with soft drop shadows for depth; no borders framing
   cards, no wallpaper bleed through panels.
 - Motion is crisp, never cartoony: only critically damped springs
