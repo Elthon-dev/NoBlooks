@@ -95,8 +95,10 @@ data class LauncherUiState(
     val panelRecents: List<RecentApp> = emptyList(),
     /** Notifications the user might have missed, newest first. */
     val panelNotifications: List<PanelNotification> = emptyList(),
-    /** True while the notification-access grant is present. */
+    /** True while the notification listener is connected and can read the shade. */
     val notificationAccess: Boolean = false,
+    /** The actual special-access grant, even before the listener has rebound. */
+    val notificationAccessGranted: Boolean = false,
     /**
      * True while "Display over other apps" is granted. This is only the permission
      * bit; the ROM can still refuse the window, so the UI never equates this with
@@ -336,7 +338,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(
                 panel = it.panel.reduce(PanelEvent.SetGestureArmed(armed)),
                 accessibilityEnabled = armed,
-                overlayGranted = overlay
+                overlayGranted = overlay,
+                notificationAccessGranted =
+                    com.elthon.optilauncher.data.NotificationAccess.isGranted(app)
             )
         }
     }

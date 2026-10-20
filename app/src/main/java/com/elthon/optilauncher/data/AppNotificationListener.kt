@@ -134,6 +134,22 @@ private fun extraText(extras: android.os.Bundle, n: Notification): String? {
 }
 
 /**
+ * Reads the actual special-access grant, independent of whether the listener is
+ * currently connected. On ColorOS this is also the bit the hidden settings entry
+ * controls; the Settings row uses it so "Granted" is never guessed from a live
+ * connection that may simply not have been rebound yet.
+ */
+object NotificationAccess {
+    fun isGranted(context: android.content.Context): Boolean = try {
+        androidx.core.app.NotificationManagerCompat
+            .getEnabledListenerPackages(context.applicationContext)
+            .contains(context.packageName)
+    } catch (_: Throwable) {
+        false
+    }
+}
+
+/**
  * The seam between the listener service (which has no UI) and the launcher's
  * ViewModel. A process-wide [StateFlow] is the simplest honest bridge: the service
  * pushes, the ViewModel collects. It is intentionally small — no cache, no

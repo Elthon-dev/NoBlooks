@@ -284,7 +284,7 @@ fun HomeContent(
                             oemPolicy = ui.oemPolicy,
                             overlayGranted = ui.overlayGranted,
                             accessibilityEnabled = ui.accessibilityEnabled,
-                            notificationAccessEnabled = ui.notificationAccess,
+                            notificationAccessEnabled = ui.notificationAccessGranted,
                             pinnedCount = ui.settings.favorites.size,
                             appsCount = ui.apps.size,
                             historyDays = ui.habitSummary?.historyDays ?: 0,
