@@ -193,7 +193,7 @@ class AppLauncher(context: Context) {
             // The general battery-optimisation list (lets the user set "Unrestricted").
             Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
             // Last resort: the whole battery/power settings screen.
-            Intent(android.provider.Settings.ACTION_POWER_USAGE_SUMMARY)
+            Intent(Intent.ACTION_POWER_USAGE_SUMMARY)
         )
         for (intent in candidates) {
             try {
