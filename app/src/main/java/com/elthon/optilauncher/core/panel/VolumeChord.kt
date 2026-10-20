@@ -27,7 +27,13 @@ class VolumeChord(
 
     private var upDownAt = 0L
     private var downDownAt = 0L
-    private var lastFiredAt = Long.MIN_VALUE
+
+    /**
+     * When the last chord fired. `null` (not `Long.MIN_VALUE`) until the first
+     * fire: subtracting `Long.MIN_VALUE` from an uptime reading overflows to a
+     * negative number and the debounce would silently swallow the first chord.
+     */
+    private var lastFiredAt: Long? = null
 
     /**
      * Records a key transition and returns true when it completes a new chord.
@@ -48,7 +54,8 @@ class VolumeChord(
 
         // The same physical press repeats the DOWN event; without this, holding
         // both keys would reveal over and over.
-        if (nowMs - lastFiredAt < debounceMs) return false
+        val previous = lastFiredAt
+        if (previous != null && nowMs - previous < debounceMs) return false
         lastFiredAt = nowMs
         return true
     }
