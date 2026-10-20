@@ -5,10 +5,15 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -32,12 +37,15 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.elthon.optilauncher.core.island.IslandEvent
 import com.elthon.optilauncher.core.island.IslandPage
 import com.elthon.optilauncher.core.panel.PanelEvent
 import com.elthon.optilauncher.core.panel.PanelFace
+import com.elthon.optilauncher.core.panel.RecentApp
 import com.elthon.optilauncher.ui.components.GlanceWidget
 import com.elthon.optilauncher.ui.components.SuggestionCard
 import com.elthon.optilauncher.ui.control.ControlCenterOverlay
@@ -103,6 +111,26 @@ fun HomeContent(
             .union(WindowInsets.displayCutout)
             .only(WindowInsetsSides.Top)
 
+        // When the island opens, the glance instrument rises by a token amount so
+        // the growing panel never crowds its bottom edge. Read in the layout phase.
+        val instrumentLift by animateDpAsState(
+            targetValue = if (ui.island.isExpanded) NbDim.InstrumentLift else 0.dp,
+            animationSpec = if (reducedMotion) {
+                snap()
+            } else {
+                spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 650f)
+            },
+            label = "instrumentLift"
+        )
+
+        // The Access picker's full list. Apps already carry their labels; rebuilding
+        // it only when the app list changes keeps the panel's inputs stable.
+        val panelApps = remember(ui.apps) {
+            ui.apps
+                .map { RecentApp(it.packageName, it.label, 0L, false) }
+                .sortedBy { it.label.lowercase() }
+        }
+
         // Returning from an app: dip and fade the whole home screen once per resume
         // bump. The tap that left the launcher is the user's, so the *return* is the
         // only moment we control — a short alpha ramp there makes the hand-off read
@@ -131,6 +159,7 @@ fun HomeContent(
                     .align(Alignment.TopEnd)
                     .windowInsetsPadding(topInsets)
                     .padding(end = NbDim.ScreenInset, top = NbDim.WidgetTopInset)
+                    .offset { IntOffset(0, -instrumentLift.roundToPx()) }
                     .onSizeChanged { instrumentHeightPx = it.height }
                     .onGloballyPositioned { widgetBounds = it.boundsInRoot() }
                     .graphicsLayer { alpha = widgetAlphaProvider() },
@@ -247,6 +276,7 @@ fun HomeContent(
                             iconTreatment = ui.settings.iconTreatment,
                             reducedMotion = ui.settings.reducedMotion,
                             suggestionsEnabled = ui.settings.suggestionsEnabled,
+                            allowLandscape = ui.settings.allowLandscape,
                             usageAccess = ui.usageAccess,
                             micPermissionLabel = ui.mic.detail ?: ui.mic.state.name.lowercase(),
                             isDefaultHome = ui.isDefaultHome,
@@ -254,6 +284,7 @@ fun HomeContent(
                             oemPolicy = ui.oemPolicy,
                             overlayGranted = ui.overlayGranted,
                             accessibilityEnabled = ui.accessibilityEnabled,
+                            notificationAccessEnabled = ui.notificationAccess,
                             pinnedCount = ui.settings.favorites.size,
                             appsCount = ui.apps.size,
                             historyDays = ui.habitSummary?.historyDays ?: 0,
@@ -261,6 +292,7 @@ fun HomeContent(
                             onIconTreatment = viewModel::setIconTreatment,
                             onReducedMotion = viewModel::setReducedMotion,
                             onSuggestions = viewModel::setSuggestionsEnabled,
+                            onAllowLandscape = viewModel::setAllowLandscape,
                             onGrantUsageAccess = viewModel::openUsageAccessSettings,
                             onMicPermissionAction = {
                                 when {
@@ -278,6 +310,7 @@ fun HomeContent(
                             onOpenBackgroundPolicySettings = viewModel::openBackgroundPolicySettings,
                             onOpenOverlaySettings = viewModel::openOverlaySettings,
                             onOpenAccessibilitySettings = viewModel::openAccessibilitySettings,
+                            onOpenNotificationAccessSettings = viewModel::openNotificationAccessSettings,
                             onAppDetails = { viewModel.openAppDetails() },
                             onClearHistory = viewModel::clearHabitHistory,
                             onClearFavorites = viewModel::clearFavorites
@@ -314,6 +347,9 @@ fun HomeContent(
                     habits = ui.panelHabits,
                     notifications = ui.panelNotifications,
                     notificationsGranted = ui.notificationAccess,
+                    allApps = panelApps,
+                    multitaskMode = ui.panel.multitaskMode,
+                    selectedPackages = ui.panel.selectedPackages,
                     lastStop = ui.panel.lastStop,
                     reducedMotion = reducedMotion,
                     onHome = { viewModel.onPanelEvent(PanelEvent.Home) },
@@ -322,6 +358,19 @@ fun HomeContent(
                         viewModel.onPanelEvent(PanelEvent.ShowFace(PanelFace.NOTIFICATIONS))
                     },
                     onShowHabits = { viewModel.onPanelEvent(PanelEvent.ShowFace(PanelFace.HABITS)) },
+                    onShowMultitask = {
+                        viewModel.onPanelEvent(PanelEvent.ShowMultitaskChooser)
+                    },
+                    onShowMultitaskPicker = {
+                        viewModel.onPanelEvent(PanelEvent.ShowMultitaskPicker(it))
+                    },
+                    onToggleMultitaskSelection = {
+                        viewModel.onPanelEvent(PanelEvent.ToggleMultitaskSelection(it))
+                    },
+                    onLaunchMultitask = {
+                        viewModel.onPanelEvent(PanelEvent.LaunchMultitask)
+                    },
+                    onOpenNotificationAccess = viewModel::openNotificationAccessSettings,
                     onCollapse = { viewModel.onPanelEvent(PanelEvent.CollapseToPill) },
                     onOpenApp = viewModel::openRecentApp,
                     onStopApp = viewModel::stopRecentApp,

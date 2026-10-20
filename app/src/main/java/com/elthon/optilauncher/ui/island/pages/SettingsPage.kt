@@ -44,6 +44,7 @@ fun SettingsPage(
     iconTreatment: IconTreatment,
     reducedMotion: Boolean,
     suggestionsEnabled: Boolean,
+    allowLandscape: Boolean,
     usageAccess: UsageAccess,
     micPermissionLabel: String,
     isDefaultHome: Boolean,
@@ -51,6 +52,7 @@ fun SettingsPage(
     oemPolicy: OemBackgroundPolicy,
     overlayGranted: Boolean,
     accessibilityEnabled: Boolean,
+    notificationAccessEnabled: Boolean,
     pinnedCount: Int,
     appsCount: Int,
     historyDays: Int,
@@ -58,12 +60,14 @@ fun SettingsPage(
     onIconTreatment: (IconTreatment) -> Unit,
     onReducedMotion: (Boolean) -> Unit,
     onSuggestions: (Boolean) -> Unit,
+    onAllowLandscape: (Boolean) -> Unit,
     onGrantUsageAccess: () -> Unit,
     onMicPermissionAction: () -> Unit,
     onOpenHomeSettings: () -> Unit,
     onOpenBackgroundPolicySettings: () -> Unit,
     onOpenOverlaySettings: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
+    onOpenNotificationAccessSettings: () -> Unit,
     onAppDetails: () -> Unit,
     onClearHistory: () -> Unit,
     onClearFavorites: () -> Unit,
@@ -122,6 +126,21 @@ fun SettingsPage(
                 )
             }
         )
+        OptionRow(
+            title = "Landscape mode",
+            description = if (allowLandscape) {
+                "The launcher rotates with the device. The island panel keeps its layout."
+            } else {
+                "Home stays in portrait; rotation in other apps is unaffected."
+            },
+            trailing = {
+                MonoSwitch(
+                    checked = allowLandscape,
+                    onCheckedChange = onAllowLandscape,
+                    contentDescription = "Landscape mode"
+                )
+            }
+        )
 
         Hairline(Modifier.padding(vertical = 14.dp))
         SectionLabel("Permissions & home", Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
@@ -176,6 +195,16 @@ fun SettingsPage(
             },
             onClick = onOpenOverlaySettings
         )
+        OptionRow(
+            title = "Notification access",
+            description = if (notificationAccessEnabled) {
+                "Granted — the Alerts face lists missed notifications and can reply."
+            } else {
+                "Off — Android exposes notifications only through this special access. " +
+                    "Some ROMs hide the toggle, so this opens NoBlooks' own entry."
+            },
+            onClick = onOpenNotificationAccessSettings
+        )
         if (oemPolicy.wantsKeepAliveHint) {
             OptionRow(
                 title = "Keep alive in the background",
@@ -208,6 +237,8 @@ fun SettingsPage(
                 DiagnosticLine("Usage access", usageAccess.name)
                 DiagnosticLine("Microphone", micPermissionLabel)
                 DiagnosticLine("Default home", isDefaultHome.toString())
+                DiagnosticLine("Notification access", notificationAccessEnabled.toString())
+                DiagnosticLine("Landscape", allowLandscape.toString())
             }
         }
 

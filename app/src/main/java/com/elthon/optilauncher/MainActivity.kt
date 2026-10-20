@@ -1,6 +1,7 @@
 package com.elthon.optilauncher
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.provider.Settings
 import android.view.WindowManager
@@ -12,6 +13,7 @@ import androidx.activity.viewModels
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -20,6 +22,9 @@ import com.elthon.optilauncher.core.panel.PanelEvent
 import com.elthon.optilauncher.data.PanelBus
 import com.elthon.optilauncher.ui.HomeContent
 import com.elthon.optilauncher.ui.LauncherViewModel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /**
  * The launcher's only activity.
@@ -63,6 +68,16 @@ class MainActivity : ComponentActivity() {
         window.setBackgroundDrawableResource(android.R.color.transparent)
 
         hideStatusBar()
+
+        // A launcher should not surprise anyone with rotation. Portrait is the
+        // default; the Settings switch opts into following the device/sensor.
+        applyOrientation(viewModel.ui.value.settings.allowLandscape)
+        lifecycleScope.launch {
+            viewModel.ui
+                .map { it.settings.allowLandscape }
+                .distinctUntilChanged()
+                .collect { allow -> applyOrientation(allow) }
+        }
 
         systemReducedMotion = animationsDisabled()
         registerAnimatorScaleObserver()
@@ -144,6 +159,19 @@ class MainActivity : ComponentActivity() {
         controller.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.statusBars())
+    }
+
+    /**
+     * Portrait lock by default; [ActivityInfo.SCREEN_ORIENTATION_FULL_USER] when the
+     * user enables landscape (still honouring the system auto-rotate preference).
+     */
+    private fun applyOrientation(allowLandscape: Boolean) {
+        val wanted = if (allowLandscape) {
+            ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+        if (requestedOrientation != wanted) requestedOrientation = wanted
     }
 
     private fun registerAnimatorScaleObserver() {

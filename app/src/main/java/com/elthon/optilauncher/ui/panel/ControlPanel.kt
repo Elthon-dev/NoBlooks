@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.elthon.optilauncher.core.panel.PANEL_AUTO_HIDE_MS
+import com.elthon.optilauncher.core.panel.MultitaskMode
 import com.elthon.optilauncher.core.panel.PanelFace
 import com.elthon.optilauncher.core.panel.PanelNotification
 import com.elthon.optilauncher.core.panel.PillStatus
@@ -62,12 +63,13 @@ import com.elthon.optilauncher.ui.theme.NbType
 import kotlinx.coroutines.delay
 
 /**
- * The edge pill: a compact capsule that morphs into one of three lists.
+ * The edge pill: a compact capsule that morphs into its faces.
  *
- * The pill is the always-present form — a status strip (clock + battery) above four
- * buttons: **Home**, **Recents**, **Alerts**, **Habits**. Home jumps home; the other
- * three *morph the pill itself* into their list, each with an **×** in the header
- * that collapses back to the pill without hiding it.
+ * The pill is the always-present form — a status strip (clock + battery) above five
+ * buttons: **Home**, **Recents**, **Alerts**, **Habits**, **Access**. Home jumps home;
+ * the others *morph the pill itself* into their list, each with an **×** in the
+ * header that collapses back to the pill without hiding it. Access opens the window
+ * requests: Split, Float, and the three-app picker.
  *
  * Two behaviours are deliberate:
  *  - **It does not hide out from under a finger.** While a touch is held anywhere on
@@ -86,12 +88,20 @@ fun ControlPanel(
     habits: List<RecentApp>,
     notifications: List<PanelNotification>,
     notificationsGranted: Boolean,
+    allApps: List<RecentApp>,
+    multitaskMode: MultitaskMode,
+    selectedPackages: List<String>,
     lastStop: StopVerdict?,
     reducedMotion: Boolean,
     onHome: () -> Unit,
     onShowRecents: () -> Unit,
     onShowNotifications: () -> Unit,
     onShowHabits: () -> Unit,
+    onShowMultitask: () -> Unit,
+    onShowMultitaskPicker: (MultitaskMode) -> Unit,
+    onToggleMultitaskSelection: (String) -> Unit,
+    onLaunchMultitask: () -> Unit,
+    onOpenNotificationAccess: () -> Unit,
     onCollapse: () -> Unit,
     onOpenApp: (RecentApp) -> Unit,
     onStopApp: (RecentApp) -> Unit,
@@ -160,7 +170,10 @@ fun ControlPanel(
     // there". `interacting` is fed back from the pointer handler below.
     var interacting by remember { mutableStateOf(false) }
     LaunchedEffect(visible, face, interacting) {
-        if (visible && !interacting) {
+        // The Access picker is a multi-step flow; the contract already suspends
+        // auto-hide there, and the UI must not undercut it with a local timer.
+        val timedFace = face != PanelFace.MULTITASK && face != PanelFace.MULTITASK_PICKER
+        if (visible && timedFace && !interacting) {
             delay(PANEL_AUTO_HIDE_MS)
             onDismiss()
         }
@@ -246,11 +259,13 @@ fun ControlPanel(
                     onHome = onHome,
                     onRecents = onShowRecents,
                     onNotifications = onShowNotifications,
-                    onHabits = onShowHabits
+                    onHabits = onShowHabits,
+                    onAccess = onShowMultitask
                 )
             } else {
                 FaceHeader(
                     face = face,
+                    multitaskMode = multitaskMode,
                     onCollapse = onCollapse
                 )
                 Hairline()
@@ -267,12 +282,25 @@ fun ControlPanel(
                         allowReply = allowReply,
                         onOpen = onOpenNotification,
                         onDismiss = onDismissNotification,
-                        onReply = onReply
+                        onReply = onReply,
+                        onOpenAccess = onOpenNotificationAccess
                     )
 
                     PanelFace.HABITS -> HabitsBody(
                         habits = habits,
                         onOpenApp = onOpenApp
+                    )
+
+                    PanelFace.MULTITASK -> MultitaskChooserBody(
+                        onPick = onShowMultitaskPicker
+                    )
+
+                    PanelFace.MULTITASK_PICKER -> MultitaskPickerBody(
+                        apps = allApps,
+                        mode = multitaskMode,
+                        selectedPackages = selectedPackages,
+                        onToggle = onToggleMultitaskSelection,
+                        onLaunch = onLaunchMultitask
                     )
 
                     PanelFace.OVERVIEW -> Unit
@@ -331,7 +359,8 @@ private fun PillButtons(
     onHome: () -> Unit,
     onRecents: () -> Unit,
     onNotifications: () -> Unit,
-    onHabits: () -> Unit
+    onHabits: () -> Unit,
+    onAccess: () -> Unit
 ) {
     Row(
         Modifier
@@ -343,6 +372,7 @@ private fun PillButtons(
         PillButton(Glyph.RECENTS, "Recents", Modifier.weight(1f), onRecents)
         PillButton(Glyph.BELL, "Alerts", Modifier.weight(1f), onNotifications)
         PillButton(Glyph.GRID, "Habits", Modifier.weight(1f), onHabits)
+        PillButton(Glyph.SPLIT, "Access", Modifier.weight(1f), onAccess)
     }
 }
 
@@ -373,6 +403,7 @@ private fun PillButton(
 @Composable
 private fun FaceHeader(
     face: PanelFace,
+    multitaskMode: MultitaskMode,
     onCollapse: () -> Unit
 ) {
     val colors = LocalNbColors.current
@@ -389,6 +420,8 @@ private fun FaceHeader(
                     PanelFace.RECENTS -> "Recently used"
                     PanelFace.NOTIFICATIONS -> "Missed notifications"
                     PanelFace.HABITS -> "Your frequent apps"
+                    PanelFace.MULTITASK -> "Open windows"
+                    PanelFace.MULTITASK_PICKER -> "${multitaskMode.title} · pick ${multitaskMode.requiredApps}"
                     PanelFace.OVERVIEW -> ""
                 },
                 style = NbType.bodySmall,
@@ -512,18 +545,191 @@ private fun AppRow(
 }
 
 @Composable
+private fun MultitaskChooserBody(
+    onPick: (MultitaskMode) -> Unit
+) {
+    val colors = LocalNbColors.current
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        WindowModeRow(
+            glyph = Glyph.SPLIT,
+            title = MultitaskMode.SPLIT.title,
+            description = "Places the app beside what is already open, when Android allows it.",
+            onClick = { onPick(MultitaskMode.SPLIT) }
+        )
+        WindowModeRow(
+            glyph = Glyph.WINDOW,
+            title = MultitaskMode.FLOAT.title,
+            description = "A small movable window. Requires freeform support; many phones hide it.",
+            onClick = { onPick(MultitaskMode.FLOAT) }
+        )
+        WindowModeRow(
+            glyph = Glyph.GRID,
+            title = MultitaskMode.TRIPLE.title,
+            description = "Pick three apps: one requested floating, two side by side.",
+            onClick = { onPick(MultitaskMode.TRIPLE) }
+        )
+        NbText(
+            "Split and floating are requests, not guarantees — the system has the final say.",
+            style = NbType.mono,
+            color = colors.onSurfaceDim,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+        )
+    }
+}
+
+@Composable
+private fun WindowModeRow(
+    glyph: Glyph,
+    title: String,
+    description: String,
+    onClick: () -> Unit
+) {
+    val colors = LocalNbColors.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(colors.surface)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconGlyph(glyph, colors.onSurface, Modifier.size(24.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            NbText(title, style = NbType.body, color = colors.onSurface)
+            NbText(description, style = NbType.bodySmall, color = colors.onSurfaceDim)
+        }
+    }
+}
+
+@Composable
+private fun MultitaskPickerBody(
+    apps: List<RecentApp>,
+    mode: MultitaskMode,
+    selectedPackages: List<String>,
+    onToggle: (String) -> Unit,
+    onLaunch: () -> Unit
+) {
+    val colors = LocalNbColors.current
+    val ready = selectedPackages.size == mode.requiredApps
+    if (apps.isEmpty()) {
+        PanelEmpty("No apps found", "The app list is still loading. Reopen in a moment.")
+        return
+    }
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            NbText(
+                "${selectedPackages.size}/${mode.requiredApps} selected",
+                style = NbType.mono,
+                color = if (ready) colors.accent else colors.onSurfaceDim
+            )
+            Spacer(Modifier.weight(1f))
+            NbText(mode.title, style = NbType.mono, color = colors.onSurfaceDim)
+        }
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 340.dp)) {
+            items(apps, key = { it.packageName }) { app ->
+                val selected = app.packageName in selectedPackages
+                PickerRow(
+                    label = app.label.ifBlank { "Unknown app" },
+                    selected = selected,
+                    enabled = selected || selectedPackages.size < mode.requiredApps,
+                    onToggle = { onToggle(app.packageName) }
+                )
+            }
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(if (ready) colors.accent else colors.surface)
+                .clickable(enabled = ready, onClick = onLaunch)
+                .padding(vertical = 12.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            NbText(
+                if (ready) mode.action else "Select ${mode.requiredApps - selectedPackages.size} more",
+                style = NbType.bodySmall,
+                color = if (ready) colors.surfaceSolid else colors.onSurfaceDim
+            )
+        }
+        NbText(
+            "The layout is a request. Floating needs freeform; Android may arrange the rest itself.",
+            style = NbType.mono,
+            color = colors.onSurfaceDim,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun PickerRow(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onToggle: () -> Unit
+) {
+    val colors = LocalNbColors.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onToggle)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        NbText(
+            label,
+            style = NbType.body,
+            color = if (enabled || selected) colors.onSurface else colors.onSurfaceDim,
+            modifier = Modifier.weight(1f)
+        )
+        Box(
+            Modifier
+                .size(26.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (selected) colors.accent else colors.surface),
+            contentAlignment = Alignment.Center
+        ) {
+            if (selected) {
+                IconGlyph(
+                    Glyph.CHECK,
+                    colors.surfaceSolid,
+                    Modifier.size(16.dp),
+                    contentDescription = "$label selected"
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun NotificationsBody(
     notifications: List<PanelNotification>,
     granted: Boolean,
     allowReply: Boolean,
     onOpen: (PanelNotification) -> Unit,
     onDismiss: (PanelNotification) -> Unit,
-    onReply: (PanelNotification, String) -> Unit
+    onReply: (PanelNotification, String) -> Unit,
+    onOpenAccess: () -> Unit
 ) {
     if (!granted) {
         PanelEmpty(
             "Notification access off",
-            "Grant notification access in Settings to see what you missed here."
+            "Android only exposes notifications through this special access. " +
+                "The button opens NoBlooks' own entry — some ROMs hide it from the list.",
+            actionLabel = "Open access settings",
+            onAction = onOpenAccess
         )
         return
     }
@@ -640,12 +846,30 @@ private fun StopVerdictLine(verdict: StopVerdict) {
 }
 
 @Composable
-private fun PanelEmpty(title: String, description: String) {
+private fun PanelEmpty(
+    title: String,
+    description: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
+) {
     val colors = LocalNbColors.current
     Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         NbText(title, style = NbType.title, color = colors.onSurface)
         Spacer(Modifier.height(6.dp))
         NbText(description, style = NbType.bodySmall, color = colors.onSurfaceDim)
+        if (actionLabel != null && onAction != null) {
+            Spacer(Modifier.height(12.dp))
+            NbText(
+                actionLabel,
+                style = NbType.mono,
+                color = colors.accent,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(colors.surface)
+                    .clickable(onClick = onAction)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+        }
     }
 }
 

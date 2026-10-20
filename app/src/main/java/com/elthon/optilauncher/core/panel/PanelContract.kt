@@ -17,7 +17,7 @@ package com.elthon.optilauncher.core.panel
 
 /** What the panel is currently showing, beyond the fixed action buttons. */
 enum class PanelFace {
-    /** The pill itself: four buttons only. */
+    /** The pill itself: five buttons only. */
     OVERVIEW,
 
     /** The app switcher list (tap to open, long-press to force-stop). */
@@ -27,7 +27,26 @@ enum class PanelFace {
     NOTIFICATIONS,
 
     /** The user's habit-ranked apps, for agile jumping. */
-    HABITS
+    HABITS,
+
+    /** The window-mode chooser: split, float, or the three-app view. */
+    MULTITASK,
+
+    /** The app picker for one of the window modes, with a 3-item cap for triple. */
+    MULTITASK_PICKER
+}
+
+/**
+ * The three window requests the panel can make.
+ *
+ * Never confuse these with what Android *guarantees*: floating needs the freeform
+ * feature, split is a request the system may refuse, and the triple view is three
+ * best-effort launches. The UI says so; nothing here pretends otherwise.
+ */
+enum class MultitaskMode(val requiredApps: Int, val title: String, val action: String) {
+    SPLIT(1, "Split screen", "Open in split"),
+    FLOAT(1, "Floating window", "Open floating"),
+    TRIPLE(3, "Three apps at once", "Launch all three")
 }
 
 /**
@@ -53,13 +72,24 @@ data class PanelState(
      * is suspended in this state: a panel that vanishes out from under a finger is
      * the opposite of "always there". It resets to false on release.
      */
-    val interacting: Boolean = false
+    val interacting: Boolean = false,
+    /** Which window request the Access picker is currently collecting for. */
+    val multitaskMode: MultitaskMode = MultitaskMode.TRIPLE,
+    /**
+     * Packages ticked in the Access picker, in tap order. Capped at
+     * `multitaskMode.requiredApps`; triple view therefore needs exactly three.
+     */
+    val selectedPackages: List<String> = emptyList()
 ) {
     val isRecents: Boolean get() = face == PanelFace.RECENTS
     val isNotifications: Boolean get() = face == PanelFace.NOTIFICATIONS
     val isHabits: Boolean get() = face == PanelFace.HABITS
+    val isMultitask: Boolean get() = face == PanelFace.MULTITASK
+    val isMultitaskPicker: Boolean get() = face == PanelFace.MULTITASK_PICKER
     /** True when the pill has morphed into a list rather than showing its buttons. */
     val isFaceOpen: Boolean get() = face != PanelFace.OVERVIEW
+    /** True when the ticked packages satisfy the current mode. */
+    val selectionReady: Boolean get() = selectedPackages.size == multitaskMode.requiredApps
 }
 
 /**
@@ -123,6 +153,21 @@ sealed interface PanelEvent {
 
     data class SetStopVerdict(val verdict: StopVerdict?) : PanelEvent
 
+    /** Open the window-mode chooser (Split / Float / Triple). */
+    data object ShowMultitaskChooser : PanelEvent
+
+    /** Open the app picker for [mode], starting with an empty selection. */
+    data class ShowMultitaskPicker(val mode: MultitaskMode) : PanelEvent
+
+    /**
+     * Tick or untick an app in the Access picker. A full selection refuses new
+     * ticks instead of silently forgetting an earlier pick.
+     */
+    data class ToggleMultitaskSelection(val packageName: String) : PanelEvent
+
+    /** The user pressed the picker's launch action; the controller performs it. */
+    data object LaunchMultitask : PanelEvent
+
     /** Onboarding finished: land hidden. */
     data object EnterHome : PanelEvent
 }
@@ -142,35 +187,104 @@ const val PANEL_AUTO_HIDE_MS = 5_000L
  *    panel away from a finger that is on it.
  *  - `EnterHome` always lands hidden on `OVERVIEW`, clearing the transient verdict.
  *  - Arming is orthogonal: it never changes visibility or face.
+ *  - The Access picker never ticks more apps than the mode needs; a full selection
+ *    ignores further ticks rather than evicting an earlier choice.
+ *  - Auto-hide is suspended while the multitask chooser/picker is up: picking three
+ *    apps takes longer than five seconds, and a vanishing picker is a bug.
+ *  - Leaving the panel/face always clears the pending multitask selection.
  */
 fun PanelState.reduce(event: PanelEvent): PanelState = when (event) {
     PanelEvent.ThreeFingerTap ->
         if (visible) copy(origin = PanelOrigin.THREE_FINGER)
         else copy(visible = true, origin = PanelOrigin.THREE_FINGER)
 
-    PanelEvent.Toggle -> if (visible) copy(visible = false, interacting = false) else copy(
+    PanelEvent.Toggle -> if (visible) copy(
+        visible = false,
+        interacting = false,
+        selectedPackages = emptyList()
+    ) else copy(
         visible = true,
         origin = PanelOrigin.TAP
     )
 
     PanelEvent.Reveal -> if (visible) this else copy(visible = true, origin = PanelOrigin.TAP)
 
-    PanelEvent.Hide -> if (!visible) this else copy(visible = false, interacting = false)
+    PanelEvent.Hide -> if (!visible) this else copy(
+        visible = false,
+        interacting = false,
+        selectedPackages = emptyList()
+    )
 
     PanelEvent.AutoHideElapsed ->
-        if (!visible || interacting) this else copy(visible = false)
+        if (!visible || interacting || face == PanelFace.MULTITASK ||
+            face == PanelFace.MULTITASK_PICKER
+        ) {
+            this
+        } else {
+            copy(visible = false, selectedPackages = emptyList())
+        }
 
-    is PanelEvent.ShowFace -> copy(visible = true, face = event.face)
+    is PanelEvent.ShowFace -> copy(
+        visible = true,
+        face = event.face,
+        selectedPackages = if (event.face == PanelFace.MULTITASK_PICKER) selectedPackages else emptyList()
+    )
 
-    PanelEvent.CollapseToPill -> copy(face = PanelFace.OVERVIEW)
+    PanelEvent.CollapseToPill -> copy(
+        face = PanelFace.OVERVIEW,
+        selectedPackages = emptyList()
+    )
 
     is PanelEvent.SetInteracting -> copy(interacting = event.interacting)
 
-    PanelEvent.Home -> copy(visible = false, face = PanelFace.OVERVIEW, interacting = false)
+    PanelEvent.Home -> copy(
+        visible = false,
+        face = PanelFace.OVERVIEW,
+        interacting = false,
+        selectedPackages = emptyList()
+    )
 
-    PanelEvent.SystemRecents -> copy(visible = false, face = PanelFace.OVERVIEW)
+    PanelEvent.SystemRecents -> copy(
+        visible = false,
+        face = PanelFace.OVERVIEW,
+        selectedPackages = emptyList()
+    )
 
-    PanelEvent.SystemNotifications -> copy(visible = false, face = PanelFace.OVERVIEW)
+    PanelEvent.SystemNotifications -> copy(
+        visible = false,
+        face = PanelFace.OVERVIEW,
+        selectedPackages = emptyList()
+    )
+
+    PanelEvent.ShowMultitaskChooser -> copy(
+        visible = true,
+        face = PanelFace.MULTITASK,
+        selectedPackages = emptyList()
+    )
+
+    is PanelEvent.ShowMultitaskPicker -> copy(
+        visible = true,
+        face = PanelFace.MULTITASK_PICKER,
+        multitaskMode = event.mode,
+        selectedPackages = emptyList()
+    )
+
+    is PanelEvent.ToggleMultitaskSelection -> {
+        val pkg = event.packageName
+        when {
+            pkg in selectedPackages -> copy(selectedPackages = selectedPackages - pkg)
+            selectedPackages.size < multitaskMode.requiredApps ->
+                copy(selectedPackages = selectedPackages + pkg)
+            else -> this
+        }
+    }
+
+    PanelEvent.LaunchMultitask -> copy(
+        visible = false,
+        face = PanelFace.OVERVIEW,
+        interacting = false,
+        selectedPackages = emptyList()
+    )
 
     is PanelEvent.SetGestureArmed -> copy(gestureArmed = event.armed)
 
@@ -181,7 +295,8 @@ fun PanelState.reduce(event: PanelEvent): PanelState = when (event) {
         face = PanelFace.OVERVIEW,
         origin = PanelOrigin.RESTORED,
         lastStop = null,
-        interacting = false
+        interacting = false,
+        selectedPackages = emptyList()
     )
 }
 

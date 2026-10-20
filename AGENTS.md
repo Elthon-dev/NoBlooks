@@ -22,6 +22,13 @@ Report build/test results as "CI run <url>: <conclusion>". Anything not covered 
 (on-device rendering, wallpaper compositing, actual app launching, mic capture) must be
 called out as **unverified** rather than claimed as working.
 
+## Releasing updates
+
+`versionCode`/`versionName` are bumped for every installable update (`1.0.1` / code 5
+as of the Access pass). The CI debug keystore is cached, so installing a newer APK
+over an older one keeps working; if the cache is evicted the signature changes and
+one uninstall is required (Android cannot update across signatures).
+
 ## Repo
 
 - Package / applicationId / namespace: `com.elthon.optilauncher`
@@ -44,7 +51,9 @@ called out as **unverified** rather than claimed as working.
 - Home screen = glance instrument (top-right) + floating island (middle of the left
   edge), one shared `NbDim.ScreenInset`, composited over the real wallpaper
   (`FLAG_SHOW_WALLPAPER`, no splash theme, no opaque sheet, no title bar). The collapsed
-  island is a **portrait capsule** (it lives on a side edge). The expanded panel has a
+  island is a **portrait capsule** (it lives on a side edge). When the island expands,
+  the glance instrument rises by `NbDim.InstrumentLift` (10dp) so the panel's growth
+  never crowds it; read in the layout phase, `snap()` under reduced motion. The expanded panel has a
   **fixed anchor**: directly under the measured instrument on phones, level with its top
   edge on wide screens (≥680dp). The instrument reports its height so font-scale changes
   cannot cause a collision. The panel's bottom is clamped to the IME while the keyboard
@@ -52,6 +61,10 @@ called out as **unverified** rather than claimed as working.
   keyboard action row.
 - The launcher is **dark by default** (`SettingsState.themeMode = DARK`); `AUTO` is
   still available and follows measured wallpaper luminance.
+- **Portrait by default.** `SettingsState.allowLandscape = false` locks the activity to
+  `SCREEN_ORIENTATION_PORTRAIT`; turning it on uses `SCREEN_ORIENTATION_FULL_USER`
+  (follows the device/auto-rotate preference). Applied in `MainActivity.onCreate` and
+  collected live; rotation in other apps is unaffected.
 - The home screen **hides the status bar** (transient bars by swipe from the top). Top
   clearance is therefore `max(statusBars, displayCutout)` — hiding the bar must never
   put the instrument under a camera cutout.
@@ -110,6 +123,10 @@ called out as **unverified** rather than claimed as working.
   It must never render a package name: if the predicted package has no known app entry
   the card is skipped, and `HabitEngine.recommend` restricts candidates to known
   packages once the app list exists. No `com.*` fallback text, ever.
+- **Bursts and CPU work stay off the hot path.** Package broadcasts are collapsed
+  into one forced app scan after 600ms (`PACKAGE_REFRESH_DEBOUNCE_MS`); icon maps
+  commit every 24 renders; habit scoring runs on `Dispatchers.Default` and the local
+  reads on `Dispatchers.IO`, never on Main.
 - Native app icons load **progressively and in priority order** (habits, then pinned,
   then the rest), committing partial maps as they render — never one blocking pass over
   every installed app at launch. A not-yet-rendered icon is the monochrome placeholder.
@@ -127,9 +144,9 @@ called out as **unverified** rather than claimed as working.
   state in `core/panel/PanelContract.kt`), revealed by the accessibility service's
   three-finger tap. Hard truths it must never fake:
   - **Shape:** a compact capsule pill with a **status strip** (weekday, `HH:mm` clock,
-    battery %; `CHG` while charging) above **four buttons** — Home, Recents, Alerts,
-    Habits. Home jumps home; the other three **morph the pill itself** into their list
-    via `animateContentSize` (critically damped). Each list header carries an **×** that
+    battery %; `CHG` while charging) above **five buttons** — Home, Recents, Alerts,
+    Habits, Access. Home jumps home; the rest **morph the pill itself** into their
+    list via `animateContentSize` (critically damped). Each list header carries an **×** that
     runs `PanelEvent.CollapseToPill`: back to the pill, *not* hidden. Status formatting is
     pure (`core/panel/PillStatus.kt`, tested) and the clock/battery read lives in
     `data/PillStatusReader.kt` (ticks on the minute, re-reads the sticky battery
@@ -159,8 +176,21 @@ called out as **unverified** rather than claimed as working.
     overlay has no habit engine, so it reuses the usage repository's MRU list — real
     usage, but an approximation, never fabricated.
   - **Notifications** need `NotificationListenerService` (special access); the panel
-    shows a "grant access" state until it is present. Inline reply via `RemoteInput` is
-    best-effort — the UI says "Reply sent", never "delivered".
+    shows a "grant access" state until it is present, with a button that deep-links to
+    this app's own listener entry (`ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS` on
+    API 30+, then the listener list, then the app notification page). This matters
+    because ColorOS and friends hide the entry from the special-access list. Inline
+    reply via `RemoteInput` is best-effort — the UI says "Reply sent", never
+    "delivered".
+  - **Access / multitasking** is a request, never a promise. **Split** uses
+    `FLAG_ACTIVITY_LAUNCH_ADJACENT` (public since API 24; on Android 12L+ a full-screen
+    activity can enter split); **Float** uses `ActivityOptions.setLaunchBounds` only
+    when the device declares `FEATURE_FREEFORM_WINDOW_MANAGEMENT`; **Triple** requests
+    app 1 floating, app 2 normal, app 3 adjacent. `setLaunchWindowingMode` is hidden
+    API and must not be used/reflected. `core/panel/MultitaskMode` caps the picker at
+    the required count (3 for triple), ticks are checkmarked on the right, and
+    `PanelStateTest` covers the cap. The UI/footers say the system decides the final
+    layout, and `data/MultitaskLauncher` reports downgrades/blocks honestly.
   - It **never renders a package name**: unlabeled recents entries and untitled
     notifications show "Unknown app" / "Notification", never `com.*`.
   - `Hide` / `AutoHideElapsed` are idempotent, `CollapseToPill` never hides, and a

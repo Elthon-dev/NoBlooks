@@ -34,6 +34,12 @@ data class SettingsState(
     val iconTreatment: IconTreatment = IconTreatment.GRAYSCALE,
     val reducedMotion: Boolean = false,
     val suggestionsEnabled: Boolean = true,
+    /**
+     * Off by default: the launcher is a portrait surface (the pill, the panel and
+     * the instrument are all designed for it). Turning this on lets the activity
+     * follow the device rotation; off pins it to portrait.
+     */
+    val allowLandscape: Boolean = false,
     val onboardingComplete: Boolean = false,
     val homeRoleExplained: Boolean = false,
     /** Pinned/favorite package names. */
@@ -63,6 +69,7 @@ object SettingsCodec {
         append("icons").append(PAIR).append(state.iconTreatment.name).append(SEPARATOR)
         append("rm").append(PAIR).append(if (state.reducedMotion) 1 else 0).append(SEPARATOR)
         append("sug").append(PAIR).append(if (state.suggestionsEnabled) 1 else 0).append(SEPARATOR)
+        append("land").append(PAIR).append(if (state.allowLandscape) 1 else 0).append(SEPARATOR)
         append("ob").append(PAIR).append(if (state.onboardingComplete) 1 else 0).append(SEPARATOR)
         append("hr").append(PAIR).append(if (state.homeRoleExplained) 1 else 0).append(SEPARATOR)
         append("fav").append(PAIR).append(state.favorites.sorted().joinToString(",")).append(SEPARATOR)
@@ -88,6 +95,7 @@ object SettingsCodec {
             iconTreatment = map["icons"]?.toEnumOrNull<IconTreatment>() ?: defaults.iconTreatment,
             reducedMotion = map["rm"]?.toBooleanStrictOrNull() == true || map["rm"] == "1",
             suggestionsEnabled = map["sug"]?.let { it != "0" } ?: defaults.suggestionsEnabled,
+            allowLandscape = map["land"] == "1",
             onboardingComplete = map["ob"] == "1",
             homeRoleExplained = map["hr"] == "1",
             favorites = map["fav"]

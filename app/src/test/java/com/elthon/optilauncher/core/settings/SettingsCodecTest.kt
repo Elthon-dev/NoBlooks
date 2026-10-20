@@ -19,6 +19,7 @@ class SettingsCodecTest {
         assertFalse(state.onboardingComplete)
         assertEquals(IslandPage.APPS, state.lastPage)
         assertTrue(state.favorites.isEmpty())
+        assertFalse(state.allowLandscape)
     }
 
     @Test
@@ -29,6 +30,7 @@ class SettingsCodecTest {
             reducedMotion = true,
             suggestionsEnabled = false,
             onboardingComplete = true,
+            allowLandscape = true,
             homeRoleExplained = true,
             favorites = setOf("com.cam", "com.phone"),
             suggestionDismissedAt = 42L,

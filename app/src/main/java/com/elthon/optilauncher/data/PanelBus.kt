@@ -37,6 +37,13 @@ object PanelBus {
     private val _habits = MutableStateFlow<List<RecentApp>>(emptyList())
     val habits: StateFlow<List<RecentApp>> = _habits.asStateFlow()
 
+    /**
+     * Every launchable app, label-sorted, for the Access picker. The overlay has no
+     * app repository of its own on the UI side, so the action layer publishes here.
+     */
+    private val _apps = MutableStateFlow<List<RecentApp>>(emptyList())
+    val apps: StateFlow<List<RecentApp>> = _apps.asStateFlow()
+
     private val _notifications = MutableStateFlow<List<PanelNotification>>(emptyList())
     val notifications: StateFlow<List<PanelNotification>> = _notifications.asStateFlow()
 
@@ -65,6 +72,10 @@ object PanelBus {
 
     fun setHabits(list: List<RecentApp>) {
         _habits.value = list
+    }
+
+    fun setApps(list: List<RecentApp>) {
+        _apps.value = list
     }
 
     fun setNotifications(list: List<PanelNotification>) {

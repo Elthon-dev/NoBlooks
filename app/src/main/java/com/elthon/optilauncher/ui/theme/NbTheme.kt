@@ -88,6 +88,12 @@ object NbDim {
 
     /** Instrument slot: both home surfaces start from the same top inset. */
     val WidgetTopInset = 18.dp
+
+    /**
+     * How far the glance instrument rises while the island is expanded, so the
+     * pill's growth never crowds its bottom edge.
+     */
+    val InstrumentLift = 10.dp
     val InstrumentWidth = 252.dp
     /** Breathing room between the instrument's bottom edge and the expanded panel. */
     val InstrumentGap = 14.dp
@@ -104,8 +110,8 @@ object NbDim {
     val ControlWidthPortrait = 340.dp
     val ControlWidthLandscape = 460.dp
 
-    // The edge pill: a compact capsule with four buttons and a status strip.
-    val EdgePillWidth = 300.dp
+    // The edge pill: a compact capsule with five buttons and a status strip.
+    val EdgePillWidth = 336.dp
     val EdgePillCorner = 28.dp
     val EdgePillButton = 60.dp
     val EdgePillButtonIcon = 24.dp

@@ -38,6 +38,7 @@ import com.elthon.optilauncher.data.AppRepository
 import com.elthon.optilauncher.data.IconRenderer
 import com.elthon.optilauncher.data.LaunchRecorder
 import com.elthon.optilauncher.data.MicLevelMeter
+import com.elthon.optilauncher.data.MultitaskLauncher
 import com.elthon.optilauncher.data.NotificationBridge
 import com.elthon.optilauncher.data.PanelController
 import com.elthon.optilauncher.data.PanelSignals
@@ -146,6 +147,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private val recentsRepo = RecentsRepository(app)
     private val panelController = PanelController(app)
     private val systemActions = SystemActions(app)
+    private val multitaskLauncher = MultitaskLauncher(app)
 
     private val _ui = kotlinx.coroutines.flow.MutableStateFlow(LauncherUiState())
     val ui: kotlinx.coroutines.flow.StateFlow<LauncherUiState> = _ui
@@ -153,6 +155,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private var messageJob: Job? = null
     private var iconsJob: Job? = null
     private var habitJob: Job? = null
+    private var appsRefreshJob: Job? = null
     private var lastReturnHandledAtMs = 0L
 
     init {
@@ -193,7 +196,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         refreshApps()
-        appRepo.startWatching { refreshApps(force = true) }
+        // Package add/remove/change bursts (an install emits several broadcasts) are
+        // collapsed into one forced scan instead of one scan per broadcast. 600ms is
+        // long enough for the burst to settle and short enough to feel immediate.
+        appRepo.startWatching { scheduleAppsRefresh() }
         refreshHomeRole()
         // Habit stats are a second, slower source (UsageStatsManager over a week via
         // binder). Two things must be true before they are worth computing: the app
@@ -279,6 +285,21 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 // keeps it current without the cost of a forced usage scan.
                 PanelFace.HABITS -> refreshHabits(force = false)
                 else -> Unit
+            }
+
+            PanelEvent.LaunchMultitask -> {
+                val snapshot = _ui.value
+                if (snapshot.panel.selectionReady) {
+                    val packages = snapshot.panel.selectedPackages
+                    val mode = snapshot.panel.multitaskMode
+                    // Hide first so the windows are not launched behind a scrim.
+                    update { it.copy(panel = it.panel.reduce(event)) }
+                    viewModelScope.launch {
+                        val report = multitaskLauncher.launch(packages, mode)
+                        showMessage(report.note)
+                    }
+                }
+                return
             }
 
             PanelEvent.CollapseToPill -> Unit
@@ -408,6 +429,14 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     // ----------------------------------------------------------------- apps
 
+    private fun scheduleAppsRefresh() {
+        appsRefreshJob?.cancel()
+        appsRefreshJob = viewModelScope.launch {
+            delay(PACKAGE_REFRESH_DEBOUNCE_MS)
+            refreshApps(force = true)
+        }
+    }
+
     fun refreshApps(force: Boolean = false) {
         viewModelScope.launch {
             update { it.copy(appsLoading = it.apps.isEmpty()) }
@@ -461,10 +490,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
                 if (bitmap != null) filled[entry.packageName] = bitmap
-                // Commit every 12 icons rather than once at the end, so the first
-                // grid the user sees is already populated instead of placeholder-
-                // only until the long tail finishes.
-                if (++sinceCommit >= 12) {
+                // Commit every 24 icons: often enough that the first screen is
+                // populated, rare enough that the O(n) map copies do not pile up.
+                if (++sinceCommit >= 24) {
                     sinceCommit = 0
                     val committed = HashMap(filled)
                     update { it.copy(icons = committed) }
@@ -521,13 +549,14 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshHabits(force: Boolean = false) {
         habitJob?.cancel()
         habitJob = viewModelScope.launch {
-            val access = usageRepo.access()
+            val access = withContext(Dispatchers.IO) { usageRepo.access() }
             update { it.copy(usageAccess = access, habitLoading = true) }
 
             val now = System.currentTimeMillis()
             val usage = usageRepo.load(now, forceRefresh = force)
-            val local = recorder.history()
-            val pinned = settingsRepo.load().favorites
+            val (local, pinned) = withContext(Dispatchers.IO) {
+                recorder.history() to settingsRepo.load().favorites
+            }
             val known = appRepo.cached()?.map { it.packageName }?.toSet().orEmpty()
 
             val input = HabitInput(
@@ -539,22 +568,26 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 pinnedPackages = pinned
             )
 
-            val weekMs = usage.aggregates.sumOf { it.totalDurationMs }
-            // "Today" is estimated from each app's launch-hour histogram applied to
-            // its total foreground time — an estimate, and labeled as such in the UI.
-            val nowHour = HabitEngine.hourOf(now)
-            val todayMs = usage.aggregates.sumOf { aggregate ->
-                if (aggregate.launchCount <= 0) return@sumOf 0L
-                val share = aggregate.hourHistogram.getOrElse(nowHour) { 0 } / aggregate.launchCount.toFloat()
-                (aggregate.totalDurationMs * share).toLong()
+            // Scoring plus the two local reads are CPU/prefs work; keep them off the
+            // main thread so the island does not stutter when a refresh lands.
+            val summary = withContext(Dispatchers.Default) {
+                val weekMs = usage.aggregates.sumOf { it.totalDurationMs }
+                // "Today" is estimated from each app's launch-hour histogram applied
+                // to its total foreground time — an estimate, and labeled as such.
+                val nowHour = HabitEngine.hourOf(now)
+                val todayMs = usage.aggregates.sumOf { aggregate ->
+                    if (aggregate.launchCount <= 0) return@sumOf 0L
+                    val share = aggregate.hourHistogram.getOrElse(nowHour) { 0 } /
+                        aggregate.launchCount.toFloat()
+                    (aggregate.totalDurationMs * share).toLong()
+                }
+                HabitEngine.summary(
+                    input = input,
+                    todayMs = todayMs,
+                    weekMs = weekMs,
+                    historyDays = usage.historyDays
+                )
             }
-
-            val summary = HabitEngine.summary(
-                input = input,
-                todayMs = todayMs,
-                weekMs = weekMs,
-                historyDays = usage.historyDays
-            )
             update { it.copy(habitSummary = summary, habitLoading = false) }
         }
     }
@@ -594,6 +627,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSuggestionsEnabled(enabled: Boolean) {
         val updated = settingsRepo.update { it.copy(suggestionsEnabled = enabled) }
+        update { it.copy(settings = updated) }
+    }
+
+    fun setAllowLandscape(allow: Boolean) {
+        val updated = settingsRepo.update { it.copy(allowLandscape = allow) }
         update { it.copy(settings = updated) }
     }
 
@@ -713,6 +751,15 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    fun openNotificationAccessSettings() {
+        update { it.copy(panel = it.panel.reduce(PanelEvent.Hide)) }
+        val opened = appLauncher.openNotificationListenerSettings()
+        showMessage(
+            if (opened) "Enable NoBlooks for notification access"
+            else "No notification-access screen on this device"
+        )
+    }
+
     fun openAppDetails(packageName: String = getApplication<Application>().packageName) {
         val opened = appLauncher.openAppDetails(packageName)
         if (!opened) showMessage("No app-details screen available")
@@ -795,6 +842,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val MESSAGE_MILLIS = 2600L
         private const val RETURN_DEBOUNCE_MS = 400L
+        private const val PACKAGE_REFRESH_DEBOUNCE_MS = 600L
         private val DARK_TINT = 0xFFEDEDEF.toInt()
         private val LIGHT_TINT = 0xFF16171A.toInt()
     }

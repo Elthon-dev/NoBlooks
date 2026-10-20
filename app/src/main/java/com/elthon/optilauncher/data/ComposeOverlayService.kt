@@ -82,6 +82,7 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
         // activity is started the overlay must stay hidden — otherwise a reveal
         // would stack two identical panels on top of each other.
         lifecycleScope.launch {
+            var lastFace: com.elthon.optilauncher.core.panel.PanelFace? = null
             kotlinx.coroutines.flow.combine(PanelBus.state, PanelBus.appForeground) { state, foreground ->
                 state to foreground
             }.collect { (state, foreground) ->
@@ -89,10 +90,15 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
                 if (overlayView == null && show) showOverlay()
                 setTouchable(show)
                 setWindowVisible(show)
-                if (show) {
+                // Refresh only on a face transition: ticking a checkbox must not
+                // re-trigger a usage/app scan on every selection event.
+                val faceChanged = state.face != lastFace
+                lastFace = if (show) state.face else null
+                if (show && faceChanged) {
                     when (state.face) {
                         com.elthon.optilauncher.core.panel.PanelFace.RECENTS -> controller.refreshRecents()
                         com.elthon.optilauncher.core.panel.PanelFace.HABITS -> controller.refreshHabits()
+                        com.elthon.optilauncher.core.panel.PanelFace.MULTITASK_PICKER -> controller.refreshApps()
                         else -> Unit
                     }
                 }
@@ -289,6 +295,9 @@ class OverlayPanelActions(private val context: Context) {
     private val controller = PanelController(context)
     private val systemActions = SystemActions(context)
     private val recentsRepo = RecentsRepository(context)
+    private val appRepo = AppRepository(context)
+    private val multitaskLauncher = MultitaskLauncher(context)
+    private val appLauncher = AppLauncher(context)
 
     /** Cancels in-flight list refreshes when the hosting service dies. */
     fun close() {
@@ -311,6 +320,25 @@ class OverlayPanelActions(private val context: Context) {
                 PanelFace.RECENTS -> refreshRecents()
                 PanelFace.HABITS -> refreshHabits()
                 else -> Unit
+            }
+
+            is PanelEvent.ShowMultitaskPicker -> refreshApps()
+
+            PanelEvent.LaunchMultitask -> {
+                val snapshot = PanelBus.state.value
+                if (snapshot.selectionReady) {
+                    val packages = snapshot.selectedPackages
+                    val mode = snapshot.multitaskMode
+                    PanelBus.dispatch(event)
+                    scope.launch {
+                        val report = multitaskLauncher.launch(packages, mode)
+                        Log.i(
+                            "OverlayActions",
+                            "multitask ${report.mode}: ${report.started}/${report.outcomes.size} started"
+                        )
+                    }
+                }
+                return
             }
 
             PanelEvent.CollapseToPill -> Unit
@@ -341,6 +369,22 @@ class OverlayPanelActions(private val context: Context) {
             val list = recentsRepo.recents(selfPackage = self)
             PanelBus.setHabits(list)
         }
+    }
+
+    /** Refreshes the overlay picker's app list from the shared repository scan. */
+    fun refreshApps() {
+        scope.launch {
+            val list = appRepo.apps()
+                .map { RecentApp(it.packageName, it.label, 0L, false) }
+                .sortedBy { it.label.lowercase() }
+            PanelBus.setApps(list)
+        }
+    }
+
+    /** Opens the notification-listener access entry (per-app on Android 11+). */
+    fun openNotificationAccess() {
+        PanelBus.dispatch(PanelEvent.Hide)
+        appLauncher.openNotificationListenerSettings()
     }
 
     fun openApp(app: RecentApp) {

@@ -172,4 +172,67 @@ class PanelStateTest {
         assertTrue(PanelState(face = PanelFace.HABITS).isFaceOpen)
         assertTrue(PanelState(face = PanelFace.RECENTS).isFaceOpen)
     }
+
+    @Test
+    fun `multitask chooser opens the picker with an empty selection`() {
+        val chooser = PanelState().reduce(PanelEvent.ShowMultitaskChooser)
+        assertTrue(chooser.visible)
+        assertTrue(chooser.isMultitask)
+        assertTrue(chooser.selectedPackages.isEmpty())
+
+        val picker = chooser.reduce(PanelEvent.ShowMultitaskPicker(MultitaskMode.TRIPLE))
+        assertTrue(picker.isMultitaskPicker)
+        assertEquals(MultitaskMode.TRIPLE, picker.multitaskMode)
+        assertTrue(picker.selectedPackages.isEmpty())
+        assertFalse(picker.selectionReady)
+    }
+
+    @Test
+    fun `triple selection caps at three and toggling deselects`() {
+        var s = PanelState().reduce(PanelEvent.ShowMultitaskPicker(MultitaskMode.TRIPLE))
+        s = s.reduce(PanelEvent.ToggleMultitaskSelection("a"))
+        s = s.reduce(PanelEvent.ToggleMultitaskSelection("b"))
+        s = s.reduce(PanelEvent.ToggleMultitaskSelection("c"))
+        assertTrue(s.selectionReady)
+
+        // A fourth tick is ignored instead of evicting an earlier choice.
+        assertEquals(s, s.reduce(PanelEvent.ToggleMultitaskSelection("d")))
+
+        val unchecked = s.reduce(PanelEvent.ToggleMultitaskSelection("b"))
+        assertEquals(listOf("a", "c"), unchecked.selectedPackages)
+        assertFalse(unchecked.selectionReady)
+    }
+
+    @Test
+    fun `single-app modes are ready after one pick`() {
+        val split = PanelState()
+            .reduce(PanelEvent.ShowMultitaskPicker(MultitaskMode.SPLIT))
+            .reduce(PanelEvent.ToggleMultitaskSelection("a"))
+        assertTrue(split.selectionReady)
+        assertEquals(1, split.selectedPackages.size)
+    }
+
+    @Test
+    fun `leaving the picker clears the selection`() {
+        val picking = PanelState()
+            .reduce(PanelEvent.ShowMultitaskPicker(MultitaskMode.TRIPLE))
+            .reduce(PanelEvent.ToggleMultitaskSelection("a"))
+        assertTrue(picking.selectedPackages.isNotEmpty())
+
+        assertTrue(picking.reduce(PanelEvent.CollapseToPill).selectedPackages.isEmpty())
+        assertTrue(picking.reduce(PanelEvent.Hide).selectedPackages.isEmpty())
+        assertTrue(picking.reduce(PanelEvent.Home).selectedPackages.isEmpty())
+        assertTrue(picking.reduce(PanelEvent.LaunchMultitask).selectedPackages.isEmpty())
+    }
+
+    @Test
+    fun `auto-hide is suspended while the multitask picker is open`() {
+        val picking = PanelState()
+            .reduce(PanelEvent.ShowMultitaskPicker(MultitaskMode.TRIPLE))
+        assertEquals(picking, picking.reduce(PanelEvent.AutoHideElapsed))
+
+        val chooser = PanelState().reduce(PanelEvent.ShowMultitaskChooser)
+        assertEquals(chooser, chooser.reduce(PanelEvent.AutoHideElapsed))
+    }
+
 }

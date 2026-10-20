@@ -31,6 +31,7 @@ fun OverlayRoot(actions: OverlayPanelActions) {
     val panel by PanelBus.state.collectAsState()
     val recents by PanelBus.recents.collectAsState()
     val habits by PanelBus.habits.collectAsState()
+    val apps by PanelBus.apps.collectAsState()
     val notifications by NotificationBridge.notifications.collectAsState()
     val notificationsGranted by NotificationBridge.connected.collectAsState()
 
@@ -52,6 +53,9 @@ fun OverlayRoot(actions: OverlayPanelActions) {
             habits = habits,
             notifications = notifications,
             notificationsGranted = notificationsGranted,
+            allApps = apps,
+            multitaskMode = panel.multitaskMode,
+            selectedPackages = panel.selectedPackages,
             lastStop = panel.lastStop,
             reducedMotion = reducedMotion,
             allowReply = false,
@@ -59,6 +63,11 @@ fun OverlayRoot(actions: OverlayPanelActions) {
             onShowRecents = { actions.dispatch(PanelEvent.ShowFace(PanelFace.RECENTS)) },
             onShowNotifications = { actions.dispatch(PanelEvent.ShowFace(PanelFace.NOTIFICATIONS)) },
             onShowHabits = { actions.dispatch(PanelEvent.ShowFace(PanelFace.HABITS)) },
+            onShowMultitask = { actions.dispatch(PanelEvent.ShowMultitaskChooser) },
+            onShowMultitaskPicker = { actions.dispatch(PanelEvent.ShowMultitaskPicker(it)) },
+            onToggleMultitaskSelection = { actions.dispatch(PanelEvent.ToggleMultitaskSelection(it)) },
+            onLaunchMultitask = { actions.dispatch(PanelEvent.LaunchMultitask) },
+            onOpenNotificationAccess = { actions.openNotificationAccess() },
             onCollapse = { actions.dispatch(PanelEvent.CollapseToPill) },
             onOpenApp = { actions.openApp(it) },
             onStopApp = { actions.stopApp(it) },

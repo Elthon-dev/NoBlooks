@@ -44,7 +44,14 @@ class AppLauncher(context: Context) {
         }
     )
 
-    fun launch(target: LaunchTarget, requested: WindowMode): LaunchOutcome {
+    fun launch(target: LaunchTarget, requested: WindowMode): LaunchOutcome =
+        start(target, requested, checkResolvable = true)
+
+    private fun start(
+        target: LaunchTarget,
+        requested: WindowMode,
+        checkResolvable: Boolean
+    ): LaunchOutcome {
         val caps = deviceCaps()
         val plan = LaunchPlanner.plan(target, requested, caps)
 
@@ -55,10 +62,17 @@ class AppLauncher(context: Context) {
         }
 
         // Proactive "gone/disabled" detection (subject to package visibility, which
-        // the manifest <queries> declaration covers for launcher activities).
-        val resolves = try {
-            pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) != null
-        } catch (_: Throwable) {
+        // the manifest <queries> declaration covers for launcher activities). Skipped
+        // for components obtained from getLaunchIntentForPackage(): those need no
+        // CATEGORY_DEFAULT and re-resolving with MATCH_DEFAULT_ONLY would misreport
+        // perfectly launchable apps as unavailable.
+        val resolves = if (checkResolvable) {
+            try {
+                pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) != null
+            } catch (_: Throwable) {
+                null
+            }
+        } else {
             null
         }
         if (resolves == false) {
@@ -109,6 +123,38 @@ class AppLauncher(context: Context) {
         true
     } catch (_: Throwable) {
         false
+    }
+
+    /**
+     * Package-only variant of [launch] for the panel's Access faces: recents and
+     * the app picker only know package names, so the launcher activity is resolved
+     * here and then handed to the same planner. Split/freeform are requests, and
+     * the returned [LaunchOutcome] says exactly which request was made and whether
+     * the device forced a downgrade.
+     */
+    fun launchPackageInMode(packageName: String, requested: WindowMode): LaunchOutcome {
+        val launchIntent = try {
+            pm.getLaunchIntentForPackage(packageName)
+        } catch (error: Throwable) {
+            return LaunchPlanner.outcomeFor(
+                error,
+                LaunchPlanner.plan(LaunchTarget(packageName, ""), requested, deviceCaps())
+            )
+        } ?: return LaunchOutcome.Unavailable("The app has no launchable activity any more.")
+
+        val component = launchIntent.component ?: try {
+            pm.resolveActivity(launchIntent, PackageManager.MATCH_DEFAULT_ONLY)
+                ?.activityInfo
+                ?.let { ComponentName(it.packageName, it.name) }
+        } catch (_: Throwable) {
+            null
+        } ?: return LaunchOutcome.Unavailable("The app has no launchable activity any more.")
+
+        return start(
+            target = LaunchTarget(component.packageName, component.className),
+            requested = requested,
+            checkResolvable = false
+        )
     }
 
     fun openAppDetails(packageName: String): Boolean = try {
@@ -263,6 +309,44 @@ class AppLauncher(context: Context) {
         true
     } catch (_: Throwable) {
         false
+    }
+
+    /**
+     * Opens the exact notification-listener entry for this app on Android 11+,
+     * falling back to the listener list and then this app's notification page.
+     *
+     * On several ROMs (ColorOS included) the "Notification access" entry is hidden
+     * from the special-access list, so users conclude the permission does not exist.
+     * The detail screen is public API 30+ and takes the component name — the most
+     * direct honest link there is.
+     */
+    fun openNotificationListenerSettings(): Boolean {
+        val self = ComponentName(appContext, AppNotificationListener::class.java)
+        val candidates = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                add(
+                    Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
+                        .putExtra(
+                            android.provider.Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
+                            self
+                        )
+                )
+            }
+            add(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            add(
+                Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, appContext.packageName)
+            )
+        }
+        for (intent in candidates) {
+            try {
+                appContext.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return true
+            } catch (_: Throwable) {
+                // Try the next, less specific target.
+            }
+        }
+        return false
     }
 
     companion object {
