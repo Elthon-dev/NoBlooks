@@ -107,6 +107,21 @@ class AppLauncher(context: Context) {
         false
     }
 
+    /**
+     * Hands the package to the system uninstaller. There is no silent uninstall
+     * path for a third-party app, and pretending otherwise would be a lie.
+     */
+    fun uninstall(packageName: String): Boolean = try {
+        val intent = Intent(
+            Intent.ACTION_DELETE,
+            android.net.Uri.parse("package:$packageName")
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        appContext.startActivity(intent)
+        true
+    } catch (_: Throwable) {
+        false
+    }
+
     fun openWallpaperPicker(): Boolean {
         val picker = Intent(Intent.ACTION_SET_WALLPAPER)
         val resolver = Intent.createChooser(picker, "Choose wallpaper").apply {

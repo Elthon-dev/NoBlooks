@@ -367,6 +367,13 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         if (!opened) showMessage("No app-details screen available")
     }
 
+    fun uninstallApp(entry: AppEntry) {
+        val opened = appLauncher.uninstall(entry.packageName)
+        showMessage(
+            if (opened) "Uninstalling ${entry.label}…" else "No uninstaller available"
+        )
+    }
+
     fun refreshHomeRole() {
         val state = PermissionStatus.homeRoleState(getApplication())
         val note = when {

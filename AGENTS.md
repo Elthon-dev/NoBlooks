@@ -65,6 +65,14 @@ called out as **unverified** rather than claimed as working.
   apps that omit `CATEGORY_DEFAULT` are searchable too. Enter launches the best match.
   Launching clears the query. Back unwinds an active search before it collapses the
   island.
+- Search is **rule-based and ranked**: exact label, label prefix, word start, word
+  initials (`gm` → Google Maps), query tokens against separate words, substring, then
+  package. Accent- and case-insensitive. Habit rank only breaks ties *inside* a tier —
+  it must never let a worse textual match win. New ranking rules need a unit test in
+  `AppSearchTest`.
+- Long-press an app for the action sheet (pin/unpin, app info, uninstall) with a
+  haptic tick. No hidden gestures: anything the UI can do is discoverable from this
+  sheet, and uninstall always goes through the system uninstaller.
 - Surfaces are **solid colour** with soft drop shadows for depth; no borders framing
   cards, no wallpaper bleed through panels.
 - Motion is crisp, never cartoony: only critically damped springs

@@ -145,6 +145,8 @@ fun HomeContent(
                             onQueryChanged = viewModel::onQueryChanged,
                             onLaunch = viewModel::launchApp,
                             onTogglePin = viewModel::togglePin,
+                            onAppInfo = { viewModel.openAppDetails(it.packageName) },
+                            onUninstall = viewModel::uninstallApp,
                             onPredictedOpen = viewModel::launchPrediction
                         )
 

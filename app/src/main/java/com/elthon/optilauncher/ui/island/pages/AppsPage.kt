@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -25,14 +26,20 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -52,6 +59,7 @@ import com.elthon.optilauncher.ui.components.IconGlyph
 import com.elthon.optilauncher.ui.components.IconTap
 import com.elthon.optilauncher.ui.components.MonoButton
 import com.elthon.optilauncher.ui.components.NbText
+import com.elthon.optilauncher.ui.components.OptionRow
 import com.elthon.optilauncher.ui.components.SectionLabel
 import com.elthon.optilauncher.ui.theme.LocalNbColors
 import com.elthon.optilauncher.ui.theme.NbDim
@@ -83,6 +91,8 @@ fun AppsPage(
     onQueryChanged: (String) -> Unit,
     onLaunch: (AppEntry) -> Unit,
     onTogglePin: (AppRef) -> Unit,
+    onAppInfo: (AppEntry) -> Unit,
+    onUninstall: (AppEntry) -> Unit,
     onPredictedOpen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -100,7 +110,17 @@ fun AppsPage(
         for (app in apps) if (!map.containsKey(app.packageName)) map[app.packageName] = app
         map
     }
-    val searchResult = remember(refs, query) { AppSearch.search(refs, query) }
+    // Habit rank doubles as the search tiebreaker: on equal textual relevance the
+    // app the user actually opens wins the draw, without ever outranking a better
+    // tier. Pinned apps join the queue after habits.
+    val priority = remember(habitPackages, pinned) {
+        val map = HashMap<String, Int>(habitPackages.size + pinned.size)
+        var rank = 0
+        for (pkg in habitPackages) map.putIfAbsent(pkg, rank++)
+        for (pkg in pinned) map.putIfAbsent(pkg, rank++)
+        map
+    }
+    val searchResult = remember(refs, query, priority) { AppSearch.search(refs, query, priority) }
     val isSearching = query.isNotBlank()
     // Every match, no cap: searching is a lookup, not a recommendation list.
     val matches: List<AppEntry> = remember(searchResult, entriesByComponent, isSearching) {
@@ -126,7 +146,12 @@ fun AppsPage(
         ranked + pinnedApps
     }
 
-    Column(modifier.fillMaxSize()) {
+    // Long-press opens actions; the sheet is page-local so collapsing the island
+    // (or switching pages) dismisses it without any extra state.
+    var actionApp by remember { mutableStateOf<AppEntry?>(null) }
+
+    Box(modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
         // --- search bar ----------------------------------------------------
         Row(
             modifier = Modifier
@@ -240,7 +265,7 @@ fun AppsPage(
                             pinned = app.packageName in pinned,
                             iconFor = iconFor,
                             onLaunch = { onLaunch(app) },
-                            onTogglePin = { onTogglePin(app.toRef()) }
+                            onOpenActions = { actionApp = app }
                         )
                     }
                 }
@@ -273,7 +298,7 @@ fun AppsPage(
                                 pinned = app.packageName in pinned,
                                 iconFor = iconFor,
                                 onLaunch = { onLaunch(app) },
-                                onTogglePin = { onTogglePin(app.toRef()) }
+                                onOpenActions = { actionApp = app }
                             )
                         }
                     } else {
@@ -290,7 +315,7 @@ fun AppsPage(
                                 pinned = app.packageName in pinned,
                                 iconFor = iconFor,
                                 onLaunch = { onLaunch(app) },
-                                onTogglePin = { onTogglePin(app.toRef()) }
+                                onOpenActions = { actionApp = app }
                             )
                         }
                         if (apps.size > habitApps.size) {
@@ -307,6 +332,101 @@ fun AppsPage(
                 }
             }
         }
+        }
+
+        actionApp?.let { entry ->
+            AppActionSheet(
+                app = entry,
+                pinned = entry.packageName in pinned,
+                iconFor = iconFor,
+                onDismiss = { actionApp = null },
+                onPin = {
+                    onTogglePin(entry.toRef())
+                    actionApp = null
+                },
+                onInfo = {
+                    onAppInfo(entry)
+                    actionApp = null
+                },
+                onUninstall = {
+                    onUninstall(entry)
+                    actionApp = null
+                }
+            )
+        }
+    }
+}
+
+/**
+ * Long-press actions in the launcher's own surface instead of a system dialog:
+ * pin (the habit shortcut), app info, uninstall. Solid card, no borders.
+ */
+@Composable
+private fun AppActionSheet(
+    app: AppEntry,
+    pinned: Boolean,
+    iconFor: (String) -> ImageBitmap?,
+    onDismiss: () -> Unit,
+    onPin: () -> Unit,
+    onInfo: () -> Unit,
+    onUninstall: () -> Unit
+) {
+    val colors = LocalNbColors.current
+    val shape = RoundedCornerShape(22.dp)
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(colors.scrim)
+            .pointerInput(Unit) { detectTapGestures { onDismiss() } },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            Modifier
+                .padding(horizontal = NbDim.ContentInset)
+                .widthIn(max = 320.dp)
+                .fillMaxWidth()
+                .shadow(20.dp, shape)
+                .clip(shape)
+                .background(colors.surfaceSolid)
+                .pointerInput(Unit) { detectTapGestures { } }
+                .padding(vertical = 8.dp)
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = NbDim.ContentInset, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                AppIcon(
+                    bitmap = iconFor(app.packageName),
+                    label = app.label,
+                    modifier = Modifier.size(38.dp)
+                )
+                Column(Modifier.weight(1f)) {
+                    NbText(
+                        app.label,
+                        style = NbType.body,
+                        color = colors.onSurface,
+                        maxLines = 1
+                    )
+                    NbText(
+                        app.packageName,
+                        style = NbType.bodySmall,
+                        color = colors.onSurfaceDim,
+                        maxLines = 1,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+            }
+            OptionRow(
+                title = if (pinned) "Unpin from habit apps" else "Pin to habit apps",
+                onClick = onPin
+            )
+            OptionRow(title = "App info", onClick = onInfo)
+            OptionRow(title = "Uninstall", onClick = onUninstall, destructive = true)
+            OptionRow(title = "Cancel", onClick = onDismiss)
+        }
     }
 }
 
@@ -316,10 +436,11 @@ private fun AppCell(
     pinned: Boolean,
     iconFor: (String) -> ImageBitmap?,
     onLaunch: () -> Unit,
-    onTogglePin: () -> Unit,
+    onOpenActions: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalNbColors.current
+    val haptic = LocalHapticFeedback.current
     Column(
         modifier = modifier
             .padding(4.dp)
@@ -327,7 +448,10 @@ private fun AppCell(
             .pointerInput(app.packageName) {
                 detectTapGestures(
                     onTap = { onLaunch() },
-                    onLongPress = { onTogglePin() }
+                    onLongPress = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onOpenActions()
+                    }
                 )
             }
             .padding(vertical = 8.dp, horizontal = 6.dp),
