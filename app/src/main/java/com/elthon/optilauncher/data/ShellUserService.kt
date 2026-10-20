@@ -30,9 +30,4 @@ class ShellUserService : IShellService.Stub() {
         }
     }
 
-    // Shizuku destroys the user service by calling this transaction when the version or
-    // tag changes. Nothing long-lived lives here, so just go away cleanly.
-    override fun destroy() {
-        System.exit(0)
-    }
 }
