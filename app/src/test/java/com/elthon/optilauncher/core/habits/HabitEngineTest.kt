@@ -105,6 +105,38 @@ class HabitEngineTest {
     }
 
     @Test
+    fun `recommendation skips packages the launcher cannot see, never leaks a name`() {
+        // The top-scoring package is not in the launchable set (stale usage row for
+        // an uninstalled app). With a populated knownPackages the engine must fall
+        // through to the best *known* app instead of suggesting a phantom.
+        val input = HabitInput(
+            nowEpochMs = now,
+            aggregates = listOf(
+                aggregate("com.ghost.app", launches = 40, lastUsedMs = now - 1_000L),
+                aggregate("com.real.app", launches = 30, lastUsedMs = now - 1_000L)
+            ),
+            localLaunches = emptyList(),
+            hasUsageAccess = true,
+            knownPackages = setOf("com.real.app")
+        )
+        val prediction = HabitEngine.recommend(input)
+        assertTrue(prediction.hasPrediction)
+        assertEquals("com.real.app", prediction.packageName)
+    }
+
+    @Test
+    fun `recommendation with no known candidates declines instead of pointing at a ghost`() {
+        val input = HabitInput(
+            nowEpochMs = now,
+            aggregates = listOf(aggregate("com.ghost.app", launches = 40, lastUsedMs = now - 1_000L)),
+            localLaunches = emptyList(),
+            hasUsageAccess = true,
+            knownPackages = setOf("com.real.app")
+        )
+        assertFalse(HabitEngine.recommend(input).hasPrediction)
+    }
+
+    @Test
     fun `summary reports system observation and totals`() {
         val input = HabitInput(
             nowEpochMs = now,

@@ -21,7 +21,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /** Icon vocabulary for the launcher — hand-drawn, monochrome, no icon library. */
-enum class Glyph { SEARCH, MIC, MIC_OFF, GRID, CHART, IMAGE, SLIDERS, CLOSE, PIN, CHECK, CHEVRON, SPLIT, WINDOW, REFRESH, TRASH, INFO, OPEN, HOME, DOT, KEYBOARD }
+enum class Glyph { SEARCH, MIC, MIC_OFF, GRID, CHART, IMAGE, SLIDERS, CLOSE, PIN, CHECK, CHEVRON, SPLIT, WINDOW, REFRESH, TRASH, INFO, OPEN, HOME, DOT, KEYBOARD, WIFI, BLUETOOTH, CELLULAR, AIRPLANE }
 
 @Composable
 fun IconGlyph(
@@ -448,6 +448,84 @@ fun IconGlyph(
 
             Glyph.DOT -> {
                 drawCircle(tint, s * 0.30f, Offset(s / 2f, s / 2f))
+            }
+
+            Glyph.WIFI -> {
+                // Three nested arcs opening upward from a dot at the base, like the
+                // radio waves they are describing.
+                val cx = s / 2f
+                for (i in 1..3) {
+                    val r = s * (0.14f + 0.20f * i)
+                    drawArc(
+                        color = tint,
+                        startAngle = 225f,
+                        sweepAngle = 90f,
+                        useCenter = false,
+                        topLeft = Offset(cx - r, px(0.74f) - r),
+                        size = Size(r * 2, r * 2),
+                        style = stroke
+                    )
+                }
+                drawCircle(tint, s * 0.05f, Offset(cx, px(0.74f)))
+            }
+
+            Glyph.BLUETOOTH -> {
+                val midX = s / 2f
+                val top = px(0.16f)
+                val bot = px(0.84f)
+                val left = px(0.30f)
+                val right = px(0.70f)
+                val midY = (top + bot) / 2f
+                val path = Path().apply {
+                    moveTo(midX, top)
+                    lineTo(right, px(0.34f))
+                    lineTo(left, px(0.66f))
+                    lineTo(right, px(0.66f))
+                    lineTo(midX, bot)
+                    lineTo(midX, top)
+                }
+                drawPath(path, tint, style = stroke)
+            }
+
+            Glyph.CELLULAR -> {
+                // Four ascending bars: signal strength, no number attached.
+                val base = px(0.86f)
+                val barW = s * 0.10f
+                val gap = s * 0.055f
+                val heights = listOf(0.22f, 0.36f, 0.50f, 0.64f)
+                heights.forEachIndexed { i, h ->
+                    val x = px(0.08f) + i * (barW + gap)
+                    drawRoundRect(
+                        color = tint,
+                        topLeft = Offset(x, base - s * h),
+                        size = Size(barW, s * h),
+                        cornerRadius = CornerRadius(barW * 0.4f)
+                    )
+                }
+            }
+
+            Glyph.AIRPLANE -> {
+                // A plane seen from above: fuselage + swept wings + tailplane.
+                val path = Path().apply {
+                    moveTo(s * 0.5f, px(0.10f))
+                    lineTo(px(0.56f), px(0.44f))
+                    lineTo(px(0.90f), px(0.66f))
+                    lineTo(px(0.90f), px(0.74f))
+                    lineTo(px(0.56f), px(0.66f))
+                    lineTo(px(0.56f), px(0.82f))
+                    lineTo(px(0.66f), px(0.90f))
+                    lineTo(px(0.66f), px(0.94f))
+                    lineTo(s * 0.5f, px(0.88f))
+                    lineTo(px(0.34f), px(0.94f))
+                    lineTo(px(0.34f), px(0.90f))
+                    lineTo(px(0.44f), px(0.82f))
+                    lineTo(px(0.44f), px(0.66f))
+                    lineTo(px(0.10f), px(0.74f))
+                    lineTo(px(0.10f), px(0.66f))
+                    lineTo(px(0.44f), px(0.44f))
+                    close()
+                }
+                drawPath(path, tint)
             }
         }
     }

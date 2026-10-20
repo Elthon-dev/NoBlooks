@@ -374,8 +374,12 @@ private fun IslandBody(
         val bottomRoom = usableBottomPx - panelTopPx - with(density) { 24.dp.toPx() }
         val minPanelPx = with(density) { 220.dp.toPx() }
         val maxPanelPx = bottomRoom.coerceAtLeast(minPanelPx)
-        // A little taller than before so a search shows more than three rows.
-        val preferredPx = screenHeightPx * 0.62f
+        // Portrait leaves the wallpaper breathing room: the panel is ~62% of the
+        // height. Landscape has almost no height to spare and plenty of width, so
+        // the panel claims the whole usable column instead — the grid fills upward
+        // rather than a squat card floating in a wide, empty band.
+        val landscape = screenWidth > screenHeight
+        val preferredPx = if (landscape) maxPanelPx else screenHeightPx * 0.62f
         val panelHeightPx = preferredPx.coerceIn(minPanelPx, maxPanelPx)
 
         IslandGeometry(

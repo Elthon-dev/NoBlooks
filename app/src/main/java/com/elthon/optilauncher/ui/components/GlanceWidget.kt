@@ -75,8 +75,9 @@ import kotlin.math.sin
  * text is gated behind a per-minute derived value, so a second passing costs one
  * draw pass, not a recomposition of the card and its children.
  *
- * Tapping the card opens the island on the Apps page. It shares the island's
- * inset, corner rhythm and solid surface, so the two surfaces read as one set.
+ * Tapping the card grows *the card itself* into the control centre (see
+ * `ui/control/ControlCenter.kt`); it shares the island's inset, corner rhythm and
+ * solid surface, so the widget and the panel read as one object mid-morph.
  */
 @Composable
 fun GlanceWidget(

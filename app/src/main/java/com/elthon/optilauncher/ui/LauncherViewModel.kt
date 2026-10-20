@@ -133,11 +133,23 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         appRepo.startWatching { refreshApps(force = true) }
         refreshHomeRole()
         // Habit stats are a second, slower source (UsageStatsManager over a week via
-        // binder). Let the app list — the thing the first search needs — finish
-        // uncontended; the suggestion caption can arrive a beat later.
+        // binder). Two things must be true before they are worth computing: the app
+        // list must be known (so the engine can restrict predictions to real apps
+        // and never leak a package name), and it must not contend with the first
+        // search. So instead of a fixed delay, wait for the app list — then give the
+        // first frames a beat.
         viewModelScope.launch {
-            delay(400)
-            refreshHabits()
+            // Poll cheaply for the cached list rather than reading state each frame;
+            // it lands within a frame or two of launch on any real device.
+            repeat(60) {
+                if (!appRepo.cached().isNullOrEmpty()) return@launch
+                delay(16)
+            }
+        }.invokeOnCompletion {
+            viewModelScope.launch {
+                delay(200)
+                refreshHabits()
+            }
         }
     }
 
@@ -191,6 +203,19 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Rasterizes app icons, but *progressively and in priority order*.
+     *
+     * The old version rendered every installed app's icon in one background pass
+     * and then committed the whole map at once. On a device with a few hundred
+     * apps that is hundreds of `getApplicationIcon` binder calls and hundreds of
+     * 144px bitmap renders in flight while the user is opening the island and
+     * typing a search — which is exactly the "everything feels a frame behind"
+     * complaint. Instead: warm the apps the user is most likely to see first
+     * (habits, then pinned, then declaration order), commit a partial map as soon
+     * as it exists, and keep filling the rest in the background. A missing icon is
+     * simply drawn as the monochrome placeholder [AppIcon] already provides.
+     */
     private fun refreshIcons() {
         iconsJob?.cancel()
         val snapshot = _ui.value
@@ -198,14 +223,40 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         if (apps.isEmpty()) return
         val treatment = snapshot.settings.iconTreatment
         val tint = if (snapshot.theme.isDark) DARK_TINT else LIGHT_TINT
+
+        val byPackage = HashMap<String, AppEntry>(apps.size)
+        for (app in apps) byPackage.putIfAbsent(app.packageName, app)
+        val habitOrder = snapshot.habitSummary?.topApps?.map { it.packageName }.orEmpty()
+        val pinned = snapshot.settings.favorites
+        val order = LinkedHashMap<String, AppEntry>(apps.size)
+        for (pkg in habitOrder) byPackage[pkg]?.let { order.putIfAbsent(pkg, it) }
+        for (pkg in pinned) byPackage[pkg]?.let { order.putIfAbsent(pkg, it) }
+        for (app in apps) order.putIfAbsent(app.packageName, app)
+
         iconsJob = viewModelScope.launch {
-            val map = withContext(Dispatchers.Default) {
-                apps.mapNotNull { entry ->
-                    val bitmap = iconRenderer.render(entry.packageName, treatment, tint)
-                    if (bitmap != null) entry.packageName to bitmap else null
-                }.toMap()
+            val filled = HashMap<String, ImageBitmap>(_ui.value.icons)
+            var sinceCommit = 0
+            for (entry in order.values) {
+                // Reuse anything already rendered for this treatment/tint.
+                iconRenderer.cached(entry.packageName, treatment, tint)?.let {
+                    filled[entry.packageName] = it
+                    continue
+                }
+                val bitmap = withContext(Dispatchers.Default) {
+                    iconRenderer.render(entry.packageName, treatment, tint)
+                }
+                if (bitmap != null) filled[entry.packageName] = bitmap
+                // Commit every 12 icons rather than once at the end, so the first
+                // grid the user sees is already populated instead of placeholder-
+                // only until the long tail finishes.
+                if (++sinceCommit >= 12) {
+                    sinceCommit = 0
+                    val committed = HashMap(filled)
+                    update { it.copy(icons = committed) }
+                }
             }
-            update { it.copy(icons = map) }
+            val finalMap = HashMap(filled)
+            update { it.copy(icons = finalMap) }
         }
     }
 

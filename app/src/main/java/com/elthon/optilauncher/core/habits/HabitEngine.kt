@@ -246,7 +246,16 @@ object HabitEngine {
             return Prediction.noneAvailable("No usage history in the selected window yet.")
         }
 
-        val candidates = score(input).filter { it.confidence != Confidence.NONE }
+        // A recommendation must point at something the user can actually open.
+        // `knownPackages` is the launcher's own app list; when it is populated we
+        // restrict candidates to it, so a stale usage row for an uninstalled or
+        // never-labelled package can never surface as "com.android.launcher".
+        // An empty set means "not yet known", not "nothing is known", so we do not
+        // filter in that case.
+        val known = input.knownPackages
+        val candidates = score(input)
+            .filter { it.confidence != Confidence.NONE }
+            .filter { known.isEmpty() || it.packageName in known }
         if (candidates.isEmpty()) {
             val samples = input.totalSignals
             return if (samples == 0) {

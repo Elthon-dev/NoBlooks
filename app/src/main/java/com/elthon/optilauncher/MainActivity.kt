@@ -13,6 +13,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.elthon.optilauncher.ui.HomeContent
@@ -33,6 +34,15 @@ class MainActivity : ComponentActivity() {
 
     /** Mirrors Settings.Global.ANIMATOR_DURATION_SCALE == 0 (animations off). */
     private var systemReducedMotion by mutableStateOf(false)
+
+    /**
+     * Bumped every time the activity resumes from a *stopped* state — i.e. the
+     * user is coming back from an app or the task switcher. The home screen fades
+     * in once per bump so the return crossfades instead of snapping. The first
+     * resume (cold launch) is skipped: there is nothing to crossfade from.
+     */
+    private var resumeTick by mutableIntStateOf(0)
+    private var wasStopped = false
 
     private val animatorScaleObserver = object : android.database.ContentObserver(
         android.os.Handler(android.os.Looper.getMainLooper())
@@ -61,8 +71,17 @@ class MainActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this) { moveTaskToBack(true) }
 
         setContent {
-            HomeContent(viewModel = viewModel, systemReducedMotion = systemReducedMotion)
+            HomeContent(
+                viewModel = viewModel,
+                systemReducedMotion = systemReducedMotion,
+                resumeTick = resumeTick
+            )
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        wasStopped = true
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -81,6 +100,12 @@ class MainActivity : ComponentActivity() {
         viewModel.recheckUsageAccess()
         systemReducedMotion = animationsDisabled()
         hideStatusBar()
+        // Returning from an app or the switcher: fade the home screen in. The
+        // first resume after launch is skipped — the splash already covered it.
+        if (wasStopped) {
+            wasStopped = false
+            resumeTick++
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

@@ -35,6 +35,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -365,6 +366,56 @@ fun Chip(
             IconGlyph(glyph, tint, Modifier.size(12.dp))
         }
         NbText(text, style = NbType.label, color = tint, maxLines = 1)
+    }
+}
+
+/**
+ * The one recommendation the launcher makes about itself: the app you open most
+ * around now, as a small solid card you can tap to launch.
+ *
+ * Replaces the old single-line chip, which rendered "package.name · Frequently
+ * opened" whenever the habit snapshot arrived before the app list was labelled.
+ * There is no fallback text here: the caller only shows this when it has a real
+ * app entry, and the icon proves *which* app is being suggested.
+ */
+@Composable
+fun SuggestionCard(
+    label: String,
+    message: String,
+    icon: androidx.compose.ui.graphics.ImageBitmap?,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalNbColors.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessHigh),
+        label = "suggestionScale"
+    )
+    Row(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(18.dp))
+            .background(colors.surfaceSolid)
+            .clickable(interactionSource = interaction, indication = null, onClick = onOpen)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .semantics {
+                contentDescription = "Suggested app: $label. $message. Activate to open."
+            },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        AppIcon(bitmap = icon, label = label, size = 32.dp)
+        Column(Modifier.weight(1f)) {
+            NbText(text = label, style = NbType.title, color = colors.onSurface, maxLines = 1)
+            NbText(text = message, style = NbType.bodySmall, color = colors.accent, maxLines = 1)
+        }
+        IconGlyph(Glyph.OPEN, colors.onSurfaceDim, Modifier.size(14.dp))
     }
 }
 

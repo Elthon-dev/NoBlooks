@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,21 +18,26 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.elthon.optilauncher.core.island.IslandEvent
 import com.elthon.optilauncher.core.island.IslandPage
-import com.elthon.optilauncher.ui.components.Chip
 import com.elthon.optilauncher.ui.components.GlanceWidget
-import com.elthon.optilauncher.ui.components.Glyph
+import com.elthon.optilauncher.ui.components.SuggestionCard
+import com.elthon.optilauncher.ui.control.ControlCenterOverlay
 import com.elthon.optilauncher.ui.island.FloatingIsland
 import com.elthon.optilauncher.ui.island.pages.AppsPage
 import com.elthon.optilauncher.ui.island.pages.HabitsPage
@@ -39,6 +46,7 @@ import com.elthon.optilauncher.ui.island.pages.WallpaperPage
 import com.elthon.optilauncher.ui.onboarding.Onboarding
 import com.elthon.optilauncher.ui.theme.LocalNbColors
 import com.elthon.optilauncher.ui.theme.NbDim
+import com.elthon.optilauncher.ui.theme.NbMotion
 import com.elthon.optilauncher.ui.theme.NoBlooksTheme
 
 /**
@@ -56,7 +64,8 @@ import com.elthon.optilauncher.ui.theme.NoBlooksTheme
 @Composable
 fun HomeContent(
     viewModel: LauncherViewModel,
-    systemReducedMotion: Boolean
+    systemReducedMotion: Boolean,
+    resumeTick: Int = 0
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
 
@@ -73,13 +82,38 @@ fun HomeContent(
         // Measured, not assumed: the panel's fixed top anchor is derived from the
         // instrument's real height, so font-scale changes cannot cause a collision.
         var instrumentHeightPx by remember { mutableIntStateOf(0) }
+        // The control centre *is* the widget, grown: its morph starts from these
+        // measured bounds, so the animation lands exactly on the real card.
+        var widgetBounds by remember { mutableStateOf<Rect?>(null) }
+        // Whether the control centre is open. Owned here because it is an overlay
+        // over the whole home screen, like the island, not part of either surface.
+        var controlOpen by remember { mutableStateOf(false) }
         // With the status bar hidden, statusBars is 0 — but a camera cutout still
         // needs clearance, so the widget hugs whichever is taller.
         val topInsets = WindowInsets.statusBars
             .union(WindowInsets.displayCutout)
             .only(WindowInsetsSides.Top)
 
-        Box(Modifier.fillMaxSize()) {
+        // Returning from an app: dip and fade the whole home screen once per resume
+        // bump. The tap that left the launcher is the user's, so the *return* is the
+        // only moment we control — a short alpha ramp there makes the hand-off read
+        // as a crossfade rather than a hard cut. Skipped on cold launch and under
+        // reduced motion.
+        val resumeAlpha = remember { Animatable(1f) }
+        LaunchedEffect(resumeTick) {
+            if (resumeTick == 0 || reducedMotion) return@LaunchedEffect
+            resumeAlpha.snapTo(0.72f)
+            resumeAlpha.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(NbMotion.Medium1, easing = NbMotion.EmphasizedDecelerate)
+            )
+        }
+
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = resumeAlpha.value }
+        ) {
             // --- instrument widget over the wallpaper ----------------------
             // Top-right, so the island can own the true middle of the left edge
             // without the two ever colliding, in either orientation.
@@ -88,11 +122,24 @@ fun HomeContent(
                     .align(Alignment.TopEnd)
                     .windowInsetsPadding(topInsets)
                     .padding(end = NbDim.ScreenInset, top = NbDim.WidgetTopInset)
-                    .onSizeChanged { instrumentHeightPx = it.height },
-                onClick = {
-                    viewModel.onEvent(IslandEvent.SelectPage(IslandPage.APPS))
-                    viewModel.onEvent(IslandEvent.Expand)
-                }
+                    .onSizeChanged { instrumentHeightPx = it.height }
+                    .onGloballyPositioned { widgetBounds = it.boundsInRoot() },
+                onClick = { controlOpen = true }
+            )
+
+            // --- control centre (the widget, grown) ------------------------
+            // Always mounted: it owns its own open *and* close morph, so the
+            // collapse still lands on the widget after `controlOpen` has gone
+            // false. The last measured bounds are held so that landing stays put.
+            val bounds = widgetBounds
+            ControlCenterOverlay(
+                open = controlOpen,
+                originX = bounds?.left ?: 0f,
+                originY = bounds?.top ?: 0f,
+                originWidth = bounds?.width ?: 0f,
+                originHeight = bounds?.height ?: 0f,
+                reducedMotion = reducedMotion,
+                onDismiss = { controlOpen = false }
             )
 
             // --- island ----------------------------------------------------
@@ -109,19 +156,24 @@ fun HomeContent(
                 },
                 suggestion = {
                     val prediction = ui.habitSummary?.prediction
+                    // Never render a package name. If the predicted package has no
+                    // known app entry (a stale or half-refreshed habit snapshot),
+                    // there is nothing honest to show — skip the chip entirely
+                    // rather than leak "com.android.launcher" into the UI.
+                    val entry = prediction
+                        ?.takeIf { it.hasPrediction }
+                        ?.let { p -> ui.apps.firstOrNull { it.packageName == p.packageName } }
                     if (
                         ui.settings.suggestionsEnabled &&
                         !ui.island.suggestionDismissed &&
                         prediction != null &&
-                        prediction.hasPrediction
+                        entry != null
                     ) {
-                        val label = ui.apps
-                            .firstOrNull { it.packageName == prediction.packageName }
-                            ?.label ?: prediction.packageName.orEmpty()
-                        Chip(
-                            text = "$label · ${prediction.message}",
-                            glyph = Glyph.OPEN,
-                            accent = true
+                        SuggestionCard(
+                            label = entry.label,
+                            message = prediction.message,
+                            icon = ui.icons[entry.packageName],
+                            onOpen = viewModel::launchPrediction
                         )
                     }
                 },

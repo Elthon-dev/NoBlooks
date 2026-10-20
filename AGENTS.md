@@ -73,6 +73,25 @@ called out as **unverified** rather than claimed as working.
 - Long-press an app for the action sheet (pin/unpin, app info, uninstall) with a
   haptic tick. No hidden gestures: anything the UI can do is discoverable from this
   sheet, and uninstall always goes through the system uninstaller.
+- The **glance widget owns the control centre**: tapping it grows the widget *itself*
+  into a control panel (Wi-Fi / Bluetooth / mobile data / airplane tiles). The morph
+  starts from the widget's `boundsInRoot`, springs to a top-right slot, and settles its
+  corner from the widget radius to the panel radius. It is a full-screen overlay with a
+  scrim and a `BackHandler`, mounted once and owning both its open and close morph.
+- **System tiles are honest**, never fake switches: a third-party launcher cannot flip
+  a radio, so a tile reads the live state (`ConnectivityManager` transport,
+  `AIRPLANE_MODE_ON`, `bluetooth_on`) and opens the platform's own panel
+  (`Settings.Panel.ACTION_WIFI` / `ACTION_INTERNET_CONNECTIVITY`,
+  `ACTION_BLUETOOTH_SETTINGS`, `ACTION_AIRPLANE_MODE_SETTINGS`). The footer says so.
+- The **suggestion** is a small solid card (icon + app name + reason), tap to launch.
+  It must never render a package name: if the predicted package has no known app entry
+  the card is skipped, and `HabitEngine.recommend` restricts candidates to known
+  packages once the app list exists. No `com.*` fallback text, ever.
+- Native app icons load **progressively and in priority order** (habits, then pinned,
+  then the rest), committing partial maps as they render — never one blocking pass over
+  every installed app at launch. A not-yet-rendered icon is the monochrome placeholder.
+- Returning from an app fades the home screen in (~250ms, from ~0.72 alpha), once per
+  resume-from-stopped; the cold-launch resume is skipped, as is reduced motion.
 - Surfaces are **solid colour** with soft drop shadows for depth; no borders framing
   cards, no wallpaper bleed through panels.
 - Motion is crisp, never cartoony: only critically damped springs
@@ -86,7 +105,10 @@ called out as **unverified** rather than claimed as working.
   the island, its tabs, or the open page. Faces are mounted from discrete state.
 - **Mount, then move.** Opening mounts the expanded face and lets one frame land before
   the size spring starts. A page's first composition is the expensive frame; if it runs
-  mid-morph the spring is already near its target and the open reads as a snap.
+  mid-morph the spring is already near its target and the open reads as a snap. The same
+  rule applies to the control centre.
+- **Landscape:** the island panel claims the full usable column height instead of
+  `0.62 · H`; width and the `sideBySide` (≥680dp) rule are unchanged.
 - Never summon the soft keyboard on open — only when the user taps a text field.
 - Icons are hand-drawn `Canvas` glyphs; no Material 3 / icon libraries. Type goes
   through `NbText`.
