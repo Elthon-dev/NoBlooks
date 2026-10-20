@@ -126,11 +126,26 @@ called out as **unverified** rather than claimed as working.
   It is a Compose surface inside the launcher's own window (`ui/panel/ControlPanel.kt`,
   state in `core/panel/PanelContract.kt`), revealed by the accessibility service's
   three-finger tap. Hard truths it must never fake:
+  - **Shape:** a compact capsule pill with a **status strip** (weekday, `HH:mm` clock,
+    battery %; `CHG` while charging) above **four buttons** — Home, Recents, Alerts,
+    Habits. Home jumps home; the other three **morph the pill itself** into their list
+    via `animateContentSize` (critically damped). Each list header carries an **×** that
+    runs `PanelEvent.CollapseToPill`: back to the pill, *not* hidden. Status formatting is
+    pure (`core/panel/PillStatus.kt`, tested) and the clock/battery read lives in
+    `data/PillStatusReader.kt` (ticks on the minute, re-reads the sticky battery
+    broadcast; display only, never monitoring).
+  - **The pill never hides out from under a finger.** A non-consuming pointer observer
+    (Initial pass — consuming here would swallow child clicks) sets
+    `PanelEvent.SetInteracting`, and `AutoHideElapsed` is a no-op while `interacting`
+    is true. Unit-tested in `PanelStateTest`.
   - A **three-finger tap anywhere** needs an `AccessibilityService` with
     `FLAG_REQUEST_MULTI_FINGER_GESTURES`; an overlay sees only its own pixels. While
     the service is off (`PanelState.gestureArmed == false`) the panel is still usable by
     tapping the pill, and the header says the gesture needs enabling — it never claims
     the gesture is live.
+  - **Recents / Alerts / Habits buttons open the pill's own lists** (not the system
+    overview or shade). The SystemRecents/SystemNotifications events remain in the
+    contract for the fallback path but are not bound to the pill buttons.
   - **Force-stopping another app** is impossible through normal APIs; it goes through
     Shizuku (`am force-stop`, shell uid 2000). The result is a `StopVerdict`, not a
     boolean: `STOPPED` / `REVIVED` (the ROM restarted it) / `UNAVAILABLE` / `REFUSED` /
@@ -139,13 +154,18 @@ called out as **unverified** rather than claimed as working.
   - The **recents list** is an MRU package list from `UsageStats` `ACTIVITY_RESUMED`
     (plus live-process corroboration from `dumpsys activity recents` via Shizuku), not
     the system Overview stack — package-level only, no task ids or thumbnails.
+  - The **habits list** in the in-app panel is the real `HabitEngine` ranking
+    (`LauncherUiState.panelHabits`, derived from `habitSummary` + installed labels). The
+    overlay has no habit engine, so it reuses the usage repository's MRU list — real
+    usage, but an approximation, never fabricated.
   - **Notifications** need `NotificationListenerService` (special access); the panel
     shows a "grant access" state until it is present. Inline reply via `RemoteInput` is
     best-effort — the UI says "Reply sent", never "delivered".
   - It **never renders a package name**: unlabeled recents entries and untitled
     notifications show "Unknown app" / "Notification", never `com.*`.
-  - `Hide` / `AutoHideElapsed` are idempotent and a three-finger tap never leaves the
-    panel hidden; the same rules as the island, unit-tested in `PanelStateTest`.
+  - `Hide` / `AutoHideElapsed` are idempotent, `CollapseToPill` never hides, and a
+    three-finger tap never leaves the panel hidden; the same rules as the island,
+    unit-tested in `PanelStateTest`.
 - **The always-on panel is a foreground-service overlay, and it stays honest about
   its limits.**
   - Over the launcher window the panel is a Compose surface (`ui/panel/ControlPanel.kt`).

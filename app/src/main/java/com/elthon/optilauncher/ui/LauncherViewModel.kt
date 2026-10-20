@@ -104,7 +104,27 @@ data class LauncherUiState(
     val overlayGranted: Boolean = false,
     /** True while the accessibility service is enabled (the reliable reveal path). */
     val accessibilityEnabled: Boolean = false
-)
+) {
+    /**
+     * The habit-ranked apps as panel rows. Derived rather than stored so it can
+     * never drift from `habitSummary`/`apps`; labels come from the installed-app
+     * list and an unknown package degrades to a blank label ("Unknown app" in UI),
+     * never a raw package id.
+     */
+    val panelHabits: List<RecentApp>
+        get() {
+            val top = habitSummary?.topApps ?: return emptyList()
+            return top.map { scored ->
+                val label = apps.firstOrNull { it.packageName == scored.packageName }?.label.orEmpty()
+                RecentApp(
+                    packageName = scored.packageName,
+                    label = label,
+                    lastUsedMs = scored.lastUsedEpochMs,
+                    liveProcess = false
+                )
+            }
+        }
+}
 
 /**
  * State holder for the whole launcher.
@@ -252,7 +272,21 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
             PanelEvent.SystemNotifications -> systemActions.notifications()
 
-            is PanelEvent.ShowFace -> if (event.face == PanelFace.RECENTS) refreshPanelRecents()
+            is PanelEvent.ShowFace -> when (event.face) {
+                PanelFace.RECENTS -> refreshPanelRecents()
+                // The habit list is derived from `habitSummary`; a cached refresh
+                // keeps it current without the cost of a forced usage scan.
+                PanelFace.HABITS -> refreshHabits(force = false)
+                else -> Unit
+            }
+
+            PanelEvent.CollapseToPill -> Unit
+
+            is PanelEvent.SetInteracting -> {
+                val next = previous.reduce(event)
+                if (next != previous) update { it.copy(panel = next) }
+                return
+            }
 
             PanelEvent.EnterHome -> {
                 settingsRepo.update { it.copy(onboardingComplete = true) }

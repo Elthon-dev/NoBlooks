@@ -312,22 +312,26 @@ fun HomeContent(
                     face = ui.panel.face,
                     armed = ui.panel.gestureArmed,
                     recents = ui.panelRecents,
+                    habits = ui.panelHabits,
                     notifications = ui.panelNotifications,
                     notificationsGranted = ui.notificationAccess,
                     lastStop = ui.panel.lastStop,
                     reducedMotion = reducedMotion,
                     onHome = { viewModel.onPanelEvent(PanelEvent.Home) },
-                    onRecents = { viewModel.onPanelEvent(PanelEvent.SystemRecents) },
-                    onNotifications = { viewModel.onPanelEvent(PanelEvent.SystemNotifications) },
                     onShowRecents = { viewModel.onPanelEvent(PanelEvent.ShowFace(PanelFace.RECENTS)) },
                     onShowNotifications = {
                         viewModel.onPanelEvent(PanelEvent.ShowFace(PanelFace.NOTIFICATIONS))
                     },
+                    onShowHabits = { viewModel.onPanelEvent(PanelEvent.ShowFace(PanelFace.HABITS)) },
+                    onCollapse = { viewModel.onPanelEvent(PanelEvent.CollapseToPill) },
                     onOpenApp = viewModel::openRecentApp,
                     onStopApp = viewModel::stopRecentApp,
                     onOpenNotification = viewModel::openPanelNotification,
                     onDismissNotification = viewModel::dismissPanelNotification,
                     onReply = viewModel::replyPanelNotification,
+                    onInteractingChange = {
+                        viewModel.onPanelEvent(PanelEvent.SetInteracting(it))
+                    },
                     onDismiss = { viewModel.onPanelEvent(PanelEvent.Hide) }
                 )
             }

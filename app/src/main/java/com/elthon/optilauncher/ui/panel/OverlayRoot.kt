@@ -31,6 +31,7 @@ fun OverlayRoot(actions: OverlayPanelActions) {
     val context = LocalContext.current
     val panel by PanelBus.state.collectAsState()
     val recents by PanelBus.recents.collectAsState()
+    val habits by PanelBus.habits.collectAsState()
     val notifications by NotificationBridge.notifications.collectAsState()
     val notificationsGranted by NotificationBridge.connected.collectAsState()
 
@@ -50,21 +51,23 @@ fun OverlayRoot(actions: OverlayPanelActions) {
             face = panel.face,
             armed = AccessibilityPanelService.isEnabled(context),
             recents = recents,
+            habits = habits,
             notifications = notifications,
             notificationsGranted = notificationsGranted,
             lastStop = panel.lastStop,
             reducedMotion = reducedMotion,
             allowReply = false,
             onHome = { actions.dispatch(PanelEvent.Home) },
-            onRecents = { actions.dispatch(PanelEvent.SystemRecents) },
-            onNotifications = { actions.dispatch(PanelEvent.SystemNotifications) },
             onShowRecents = { actions.dispatch(PanelEvent.ShowFace(PanelFace.RECENTS)) },
             onShowNotifications = { actions.dispatch(PanelEvent.ShowFace(PanelFace.NOTIFICATIONS)) },
+            onShowHabits = { actions.dispatch(PanelEvent.ShowFace(PanelFace.HABITS)) },
+            onCollapse = { actions.dispatch(PanelEvent.CollapseToPill) },
             onOpenApp = { actions.openApp(it) },
             onStopApp = { actions.stopApp(it) },
             onOpenNotification = { actions.openAppPackage(it.packageName) },
             onDismissNotification = { actions.dismissNotification(it.key) },
             onReply = { _, _ -> },
+            onInteractingChange = { actions.dispatch(PanelEvent.SetInteracting(it)) },
             onDismiss = { actions.dispatch(PanelEvent.Hide) }
         )
     }

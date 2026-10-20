@@ -130,4 +130,46 @@ class PanelStateTest {
     fun `auto hide constant is the five second promise`() {
         assertEquals(5_000L, PANEL_AUTO_HIDE_MS)
     }
+
+    @Test
+    fun `collapse to pill keeps the panel visible and returns to overview`() {
+        val onHabits = PanelState(visible = true, face = PanelFace.HABITS)
+        val s = onHabits.reduce(PanelEvent.CollapseToPill)
+        assertTrue(s.visible)
+        assertEquals(PanelFace.OVERVIEW, s.face)
+    }
+
+    @Test
+    fun `interacting suspends the auto-hide timer`() {
+        val held = PanelState(visible = true).reduce(PanelEvent.SetInteracting(true))
+        assertTrue(held.interacting)
+        // The idle timer must not take a panel away from a finger that is on it.
+        val afterTimer = held.reduce(PanelEvent.AutoHideElapsed)
+        assertTrue(afterTimer.visible)
+        assertEquals(held, afterTimer)
+
+        // Once released, the timer works again.
+        val released = afterTimer.reduce(PanelEvent.SetInteracting(false))
+        assertFalse(released.reduce(PanelEvent.AutoHideElapsed).visible)
+    }
+
+    @Test
+    fun `hide clears the interacting flag`() {
+        val held = PanelState(visible = true, interacting = true)
+        assertFalse(held.reduce(PanelEvent.Hide).interacting)
+    }
+
+    @Test
+    fun `habits toggle flips between overview and habits`() {
+        val overview = PanelState(visible = true)
+        assertEquals(PanelFace.HABITS, overview.toggleHabitsFace().face)
+        assertEquals(PanelFace.OVERVIEW, overview.toggleHabitsFace().toggleHabitsFace().face)
+    }
+
+    @Test
+    fun `face open is only true away from overview`() {
+        assertFalse(PanelState().isFaceOpen)
+        assertTrue(PanelState(face = PanelFace.HABITS).isFaceOpen)
+        assertTrue(PanelState(face = PanelFace.RECENTS).isFaceOpen)
+    }
 }

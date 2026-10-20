@@ -34,6 +34,9 @@ object PanelBus {
     private val _recents = MutableStateFlow<List<RecentApp>>(emptyList())
     val recents: StateFlow<List<RecentApp>> = _recents.asStateFlow()
 
+    private val _habits = MutableStateFlow<List<RecentApp>>(emptyList())
+    val habits: StateFlow<List<RecentApp>> = _habits.asStateFlow()
+
     private val _notifications = MutableStateFlow<List<PanelNotification>>(emptyList())
     val notifications: StateFlow<List<PanelNotification>> = _notifications.asStateFlow()
 
@@ -50,6 +53,10 @@ object PanelBus {
 
     fun setRecents(list: List<RecentApp>) {
         _recents.value = list
+    }
+
+    fun setHabits(list: List<RecentApp>) {
+        _habits.value = list
     }
 
     fun setNotifications(list: List<PanelNotification>) {

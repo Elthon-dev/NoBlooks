@@ -103,6 +103,13 @@ object NbDim {
      */
     val ControlWidthPortrait = 340.dp
     val ControlWidthLandscape = 460.dp
+
+    // The edge pill: a compact capsule with four buttons and a status strip.
+    val EdgePillWidth = 300.dp
+    val EdgePillCorner = 28.dp
+    val EdgePillButton = 60.dp
+    val EdgePillButtonIcon = 24.dp
+    val EdgePillStatusHeight = 26.dp
 }
 
 /**

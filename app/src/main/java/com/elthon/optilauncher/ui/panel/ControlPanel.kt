@@ -1,5 +1,6 @@
 package com.elthon.optilauncher.ui.panel
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,17 +36,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.elthon.optilauncher.core.panel.PANEL_AUTO_HIDE_MS
 import com.elthon.optilauncher.core.panel.PanelFace
 import com.elthon.optilauncher.core.panel.PanelNotification
+import com.elthon.optilauncher.core.panel.PillStatus
 import com.elthon.optilauncher.core.panel.RecentApp
 import com.elthon.optilauncher.core.panel.StopVerdict
+import com.elthon.optilauncher.data.rememberPillStatus
 import com.elthon.optilauncher.ui.components.Glyph
 import com.elthon.optilauncher.ui.components.Hairline
 import com.elthon.optilauncher.ui.components.IconGlyph
@@ -56,16 +62,21 @@ import com.elthon.optilauncher.ui.theme.NbType
 import kotlinx.coroutines.delay
 
 /**
- * The edge control panel: three jump buttons (Home / Recents / Notifications) plus
- * the launcher's own app-switcher and missed-notification lists.
+ * The edge pill: a compact capsule that morphs into one of three lists.
  *
- * It lives inside the launcher's own composition (Pass 1), so it is fully
- * verifiable. The three-finger gesture and the always-on pill are the accessibility
- * service's job; this composable is what that gesture *reveals*.
+ * The pill is the always-present form — a status strip (clock + battery) above four
+ * buttons: **Home**, **Recents**, **Alerts**, **Habits**. Home jumps home; the other
+ * three *morph the pill itself* into their list, each with an **×** in the header
+ * that collapses back to the pill without hiding it.
  *
- * Layout is orientation-aware: a single column on a phone in portrait, a wider
- * two-column body on landscape / wide screens. It never stretches to fill the
- * screen — it hugs its content so wallpaper stays visible around it.
+ * Two behaviours are deliberate:
+ *  - **It does not hide out from under a finger.** While a touch is held anywhere on
+ *    the surface, `interacting` is true and the idle timer is suspended. The timer
+ *    only restarts once the finger lifts. See `PanelState.interacting`.
+ *  - **Surfaces are solid** and the pill hugs its content — wallpaper stays visible.
+ *
+ * Motion is critically damped or emphasized-duration only (`NbMotion`); the animation
+ * value is read in the layout/draw phases, never during composition.
  */
 @Composable
 fun ControlPanel(
@@ -73,20 +84,22 @@ fun ControlPanel(
     face: PanelFace,
     armed: Boolean,
     recents: List<RecentApp>,
+    habits: List<RecentApp>,
     notifications: List<PanelNotification>,
     notificationsGranted: Boolean,
     lastStop: StopVerdict?,
     reducedMotion: Boolean,
     onHome: () -> Unit,
-    onRecents: () -> Unit,
-    onNotifications: () -> Unit,
     onShowRecents: () -> Unit,
     onShowNotifications: () -> Unit,
+    onShowHabits: () -> Unit,
+    onCollapse: () -> Unit,
     onOpenApp: (RecentApp) -> Unit,
     onStopApp: (RecentApp) -> Unit,
     onOpenNotification: (PanelNotification) -> Unit,
     onDismissNotification: (PanelNotification) -> Unit,
     onReply: (PanelNotification, String) -> Unit,
+    onInteractingChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     /**
@@ -104,6 +117,7 @@ fun ControlPanel(
     var showContent by remember { mutableStateOf(visible) }
     var animateOpen by remember { mutableFloatStateOf(if (visible) 1f else 0f) }
 
+    // The pill is "open" whenever it is visible; the *face* controls how far it grows.
     val progressState = animateFloatAsState(
         targetValue = animateOpen,
         animationSpec = if (reducedMotion) {
@@ -142,10 +156,12 @@ fun ControlPanel(
         }
     }
 
-    // The 5-second idle timer. Rendered here so it lives exactly as long as the
-    // panel is on screen; any interaction recomposes `visible` and restarts it.
-    LaunchedEffect(visible) {
-        if (visible) {
+    // The 5-second idle timer. It pauses whenever the panel is being interacted with
+    // (a finger is down) — a panel that vanishes mid-tap is the opposite of "always
+    // there". `interacting` is fed back from the pointer handler below.
+    var interacting by remember { mutableStateOf(false) }
+    LaunchedEffect(visible, face, interacting) {
+        if (visible && !interacting) {
             delay(PANEL_AUTO_HIDE_MS)
             onDismiss()
         }
@@ -154,7 +170,7 @@ fun ControlPanel(
     if (!showContent) return
 
     val density = LocalDensity.current
-    val targetWidth = if (landscape) NbDim.ControlWidthLandscape else NbDim.ControlWidthPortrait
+    val targetWidth = if (landscape) NbDim.ControlWidthLandscape else NbDim.EdgePillWidth
     val targetWidthPx = with(density) { targetWidth.roundToPx() }
     val maxHeightPx = with(density) { configuration.screenHeightDp.dp.roundToPx() }
 
@@ -190,44 +206,78 @@ fun ControlPanel(
             }
             .graphicsLayer {
                 alpha = (progressState.value * 1.4f - 0.4f).coerceIn(0f, 1f)
-                shape = RoundedCornerShape(NbDim.PanelCornerTop)
+                shape = RoundedCornerShape(NbDim.EdgePillCorner)
                 clip = true
                 shadowElevation = 26.dp.toPx()
             }
-            .clip(RoundedCornerShape(NbDim.PanelCornerTop))
+            .clip(RoundedCornerShape(NbDim.EdgePillCorner))
             .background(colors.surfaceSolid)
+            // Track a held touch so the idle timer cannot fire under a finger.
+            // Observed in the Initial pass and *not consumed*: a consuming gesture
+            // detector here would swallow every child button's click.
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val pressed = event.changes.any { it.pressed }
+                        if (pressed != interacting) {
+                            interacting = pressed
+                            onInteractingChange(pressed)
+                        }
+                    }
+                }
+            }
 
-        Column(positionModifier) {
-            PanelHeader(
-                face = face,
-                armed = armed,
-                onShowRecents = onShowRecents,
-                onShowNotifications = onShowNotifications
+        Column(
+            positionModifier.animateContentSize(
+                // The pill *becomes* the list: animating the measured size is what
+                // turns a button tap into a morph instead of a jump.
+                animationSpec = if (reducedMotion) {
+                    spring(stiffness = Spring.StiffnessHigh)
+                } else {
+                    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 650f)
+                }
             )
+        ) {
+            PillStatusStrip()
             Hairline()
 
-            when (face) {
-                PanelFace.OVERVIEW -> OverviewBody(
-                    landscape = landscape,
+            if (face == PanelFace.OVERVIEW) {
+                PillButtons(
                     onHome = onHome,
-                    onRecents = onRecents,
-                    onNotifications = onNotifications
+                    onRecents = onShowRecents,
+                    onNotifications = onShowNotifications,
+                    onHabits = onShowHabits
                 )
+            } else {
+                FaceHeader(
+                    face = face,
+                    onCollapse = onCollapse
+                )
+                Hairline()
+                when (face) {
+                    PanelFace.RECENTS -> RecentsBody(
+                        recents = recents,
+                        onOpenApp = onOpenApp,
+                        onStopApp = onStopApp
+                    )
 
-                PanelFace.RECENTS -> RecentsBody(
-                    recents = recents,
-                    onOpenApp = onOpenApp,
-                    onStopApp = onStopApp
-                )
+                    PanelFace.NOTIFICATIONS -> NotificationsBody(
+                        notifications = notifications,
+                        granted = notificationsGranted,
+                        allowReply = allowReply,
+                        onOpen = onOpenNotification,
+                        onDismiss = onDismissNotification,
+                        onReply = onReply
+                    )
 
-                PanelFace.NOTIFICATIONS -> NotificationsBody(
-                    notifications = notifications,
-                    granted = notificationsGranted,
-                    allowReply = allowReply,
-                    onOpen = onOpenNotification,
-                    onDismiss = onDismissNotification,
-                    onReply = onReply
-                )
+                    PanelFace.HABITS -> HabitsBody(
+                        habits = habits,
+                        onOpenApp = onOpenApp
+                    )
+
+                    PanelFace.OVERVIEW -> Unit
+                }
             }
 
             if (lastStop != null) {
@@ -238,12 +288,93 @@ fun ControlPanel(
     }
 }
 
+// ---------------------------------------------------------------- status strip
+
 @Composable
-private fun PanelHeader(
+private fun PillStatusStrip() {
+    val colors = LocalNbColors.current
+    val context = LocalContext.current
+
+    // Reads clock + battery now, then keeps them fresh (clock ticks each minute).
+    val status by rememberPillStatus(context)
+    val clock = PillStatus.clock(status.hourOfDay, status.minute)
+    val weekday = PillStatus.weekday(status.dayOfWeek)
+    val battery = PillStatus.batteryPercent(status.batteryLevel, status.batteryScale)
+    val low = PillStatus.isLow(status.batteryLevel, status.batteryScale)
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(NbDim.EdgePillStatusHeight)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        NbText(weekday, style = NbType.weekday, color = colors.onSurfaceDim)
+        Spacer(Modifier.width(8.dp))
+        NbText(clock, style = NbType.clock, color = colors.onSurface)
+        Spacer(Modifier.weight(1f))
+        if (status.charging) {
+            NbText("CHG", style = NbType.mono, color = colors.accent)
+            Spacer(Modifier.width(6.dp))
+        }
+        NbText(
+            battery,
+            style = NbType.mono,
+            color = if (low) colors.accent else colors.onSurfaceDim
+        )
+    }
+}
+
+// --------------------------------------------------------------------- buttons
+
+@Composable
+private fun PillButtons(
+    onHome: () -> Unit,
+    onRecents: () -> Unit,
+    onNotifications: () -> Unit,
+    onHabits: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        PillButton(Glyph.HOME, "Home", Modifier.weight(1f), onHome)
+        PillButton(Glyph.RECENTS, "Recents", Modifier.weight(1f), onRecents)
+        PillButton(Glyph.BELL, "Alerts", Modifier.weight(1f), onNotifications)
+        PillButton(Glyph.GRID, "Habits", Modifier.weight(1f), onHabits)
+    }
+}
+
+@Composable
+private fun PillButton(
+    glyph: Glyph,
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val colors = LocalNbColors.current
+    Column(
+        modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(colors.surface)
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        IconGlyph(glyph, colors.onSurface, Modifier.size(NbDim.EdgePillButtonIcon))
+        Spacer(Modifier.height(6.dp))
+        NbText(label, style = NbType.tab, color = colors.onSurface)
+    }
+}
+
+// ---------------------------------------------------------------------- header
+
+@Composable
+private fun FaceHeader(
     face: PanelFace,
-    armed: Boolean,
-    onShowRecents: () -> Unit,
-    onShowNotifications: () -> Unit
+    onCollapse: () -> Unit
 ) {
     val colors = LocalNbColors.current
     Row(
@@ -256,84 +387,28 @@ private fun PanelHeader(
             NbText("CONTROL PANEL", style = NbType.weekday, color = colors.onSurfaceDim)
             NbText(
                 text = when (face) {
-                    PanelFace.OVERVIEW -> if (armed) "Three-finger tap is live" else "Enable the gesture in Settings"
                     PanelFace.RECENTS -> "Recently used"
                     PanelFace.NOTIFICATIONS -> "Missed notifications"
+                    PanelFace.HABITS -> "Your frequent apps"
+                    PanelFace.OVERVIEW -> ""
                 },
                 style = NbType.bodySmall,
-                color = if (armed || face != PanelFace.OVERVIEW) colors.onSurface else colors.accent
+                color = colors.onSurface
             )
         }
-        PanelFaceTab(Glyph.RECENTS, face == PanelFace.RECENTS, "Recently used apps", onShowRecents)
-        Spacer(Modifier.width(8.dp))
-        PanelFaceTab(Glyph.BELL, face == PanelFace.NOTIFICATIONS, "Missed notifications", onShowNotifications)
-    }
-}
-
-@Composable
-private fun PanelFaceTab(
-    glyph: Glyph,
-    active: Boolean,
-    description: String,
-    onClick: () -> Unit
-) {
-    val colors = LocalNbColors.current
-    IconGlyph(
-        glyph = glyph,
-        tint = if (active) colors.accent else colors.onSurfaceDim,
-        modifier = Modifier
-            .size(34.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick),
-        contentDescription = description
-    )
-}
-
-@Composable
-private fun OverviewBody(
-    landscape: Boolean,
-    onHome: () -> Unit,
-    onRecents: () -> Unit,
-    onNotifications: () -> Unit
-) {
-    Column(Modifier.padding(16.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            JumpButton(Glyph.HOME, "Home", Modifier.weight(1f), onHome)
-            JumpButton(Glyph.RECENTS, "Recents", Modifier.weight(1f), onRecents)
-            JumpButton(Glyph.BELL, "Alerts", Modifier.weight(1f), onNotifications)
-        }
-        Spacer(Modifier.height(12.dp))
-        NbText(
-            "Home returns here. Recents opens the app switcher — or our own list if this ROM won't " +
-                "show the system one. Alerts pulls down the shade.",
-            style = NbType.bodySmall,
-            color = LocalNbColors.current.onSurfaceDim
+        IconGlyph(
+            glyph = Glyph.CLOSE,
+            tint = colors.onSurface,
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(onClick = onCollapse),
+            contentDescription = "Back to pill"
         )
-        if (landscape) Spacer(Modifier.height(2.dp))
     }
 }
 
-@Composable
-private fun JumpButton(
-    glyph: Glyph,
-    label: String,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    val colors = LocalNbColors.current
-    Column(
-        modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(colors.surface)
-            .clickable(onClick = onClick)
-            .padding(vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        IconGlyph(glyph, colors.onSurface, Modifier.size(24.dp))
-        Spacer(Modifier.height(8.dp))
-        NbText(label, style = NbType.tab, color = colors.onSurface)
-    }
-}
+// ------------------------------------------------------------------------ body
 
 @Composable
 private fun RecentsBody(
@@ -348,44 +423,83 @@ private fun RecentsBody(
     }
     LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
         items(recents, key = { it.packageName }) { app ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpenApp(app) }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
-                    NbText(
-                        // Never leak a package name: unlabeled entries were already
-                        // dropped by RecentsRepository, so a blank label just means
-                        // "we don't know it" — say that, don't show `com.*`.
-                        app.label.ifBlank { "Unknown app" },
-                        style = NbType.body,
-                        color = colors.onSurface
-                    )
-                    if (app.liveProcess) {
-                        NbText("running", style = NbType.mono, color = colors.accent)
-                    }
-                }
-                IconGlyph(
-                    Glyph.STOP,
-                    colors.onSurfaceDim,
-                    Modifier
-                        .size(30.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable { onStopApp(app) },
-                    contentDescription = "Force stop ${app.label}"
-                )
-            }
+            AppRow(
+                label = app.label.ifBlank { "Unknown app" },
+                sub = if (app.liveProcess) "running" else null,
+                onOpen = { onOpenApp(app) },
+                onStop = { onStopApp(app) }
+            )
         }
     }
     NbText(
-        "Long-press stops an app only with Shizuku. Otherwise open its settings to force stop.",
+        "Stop uses Shizuku; without it, open the app's settings to force stop.",
         style = NbType.mono,
         color = colors.onSurfaceDim,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
     )
+}
+
+@Composable
+private fun HabitsBody(
+    habits: List<RecentApp>,
+    onOpenApp: (RecentApp) -> Unit
+) {
+    val colors = LocalNbColors.current
+    if (habits.isEmpty()) {
+        PanelEmpty("No habits yet", "Use a few apps and they will rank here.")
+        return
+    }
+    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 380.dp)) {
+        items(habits, key = { it.packageName }) { app ->
+            AppRow(
+                label = app.label.ifBlank { "Unknown app" },
+                sub = null,
+                onOpen = { onOpenApp(app) },
+                onStop = null
+            )
+        }
+    }
+    NbText(
+        "Ranked by how you actually use them. Tap to jump.",
+        style = NbType.mono,
+        color = colors.onSurfaceDim,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+    )
+}
+
+@Composable
+private fun AppRow(
+    label: String,
+    sub: String?,
+    onOpen: () -> Unit,
+    onStop: (() -> Unit)?
+) {
+    val colors = LocalNbColors.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            NbText(label, style = NbType.body, color = colors.onSurface)
+            if (sub != null) {
+                NbText(sub, style = NbType.mono, color = colors.accent)
+            }
+        }
+        if (onStop != null) {
+            IconGlyph(
+                Glyph.STOP,
+                colors.onSurfaceDim,
+                Modifier
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onStop),
+                contentDescription = "Force stop $label"
+            )
+        }
+    }
 }
 
 @Composable
@@ -397,7 +511,6 @@ private fun NotificationsBody(
     onDismiss: (PanelNotification) -> Unit,
     onReply: (PanelNotification, String) -> Unit
 ) {
-    val colors = LocalNbColors.current
     if (!granted) {
         PanelEmpty(
             "Notification access off",
@@ -436,7 +549,6 @@ private fun NotificationRow(
             .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
         NbText(
-            // Same rule as recents: resolve a real app name, never a package id.
             n.title?.takeIf { it.isNotBlank() } ?: "Notification",
             style = NbType.body,
             color = colors.onSurface,

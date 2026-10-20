@@ -15,16 +15,19 @@ package com.elthon.optilauncher.core.panel
  *    attempt, and the platform decides.
  */
 
-/** What the panel is currently showing, beyond the three fixed action buttons. */
+/** What the panel is currently showing, beyond the fixed action buttons. */
 enum class PanelFace {
-    /** Just the three buttons + the recents row. */
+    /** The pill itself: four buttons only. */
     OVERVIEW,
 
     /** The app switcher list (tap to open, long-press to force-stop). */
     RECENTS,
 
     /** The missed-notification list. */
-    NOTIFICATIONS
+    NOTIFICATIONS,
+
+    /** The user's habit-ranked apps, for agile jumping. */
+    HABITS
 }
 
 /**
@@ -44,10 +47,19 @@ data class PanelState(
      */
     val gestureArmed: Boolean = false,
     /** Force-stop verdict for the most recent long-press, for a transient toast. */
-    val lastStop: StopVerdict? = null
+    val lastStop: StopVerdict? = null,
+    /**
+     * True while the user is actively touching the pill/panel. The auto-hide timer
+     * is suspended in this state: a panel that vanishes out from under a finger is
+     * the opposite of "always there". It resets to false on release.
+     */
+    val interacting: Boolean = false
 ) {
     val isRecents: Boolean get() = face == PanelFace.RECENTS
     val isNotifications: Boolean get() = face == PanelFace.NOTIFICATIONS
+    val isHabits: Boolean get() = face == PanelFace.HABITS
+    /** True when the pill has morphed into a list rather than showing its buttons. */
+    val isFaceOpen: Boolean get() = face != PanelFace.OVERVIEW
 }
 
 /**
@@ -86,6 +98,15 @@ sealed interface PanelEvent {
 
     data class ShowFace(val face: PanelFace) : PanelEvent
 
+    /**
+     * The × button: morph a face back down to the pill, but keep the panel visible.
+     * Distinct from [Hide], which takes the whole panel away.
+     */
+    data object CollapseToPill : PanelEvent
+
+    /** True while a finger is down on the panel; suspends the auto-hide timer. */
+    data class SetInteracting(val interacting: Boolean) : PanelEvent
+
     data object Home : PanelEvent
 
     /** Open the system overview / recents. */
@@ -116,6 +137,9 @@ const val PANEL_AUTO_HIDE_MS = 5_000L
  *  - `Hide` and `AutoHideElapsed` are idempotent: hiding a hidden panel is a no-op.
  *  - A three-finger tap never leaves the panel hidden: it reveals or keeps it.
  *  - Showing a face implies visibility; you can never be on `RECENTS` while hidden.
+ *  - `CollapseToPill` morphs back to the buttons but never hides the panel.
+ *  - `AutoHideElapsed` is a no-op while `interacting` — the timer cannot take a
+ *    panel away from a finger that is on it.
  *  - `EnterHome` always lands hidden on `OVERVIEW`, clearing the transient verdict.
  *  - Arming is orthogonal: it never changes visibility or face.
  */
@@ -124,20 +148,25 @@ fun PanelState.reduce(event: PanelEvent): PanelState = when (event) {
         if (visible) copy(origin = PanelOrigin.THREE_FINGER)
         else copy(visible = true, origin = PanelOrigin.THREE_FINGER)
 
-    PanelEvent.Toggle -> if (visible) copy(visible = false) else copy(
+    PanelEvent.Toggle -> if (visible) copy(visible = false, interacting = false) else copy(
         visible = true,
         origin = PanelOrigin.TAP
     )
 
     PanelEvent.Reveal -> if (visible) this else copy(visible = true, origin = PanelOrigin.TAP)
 
-    PanelEvent.Hide -> if (!visible) this else copy(visible = false)
+    PanelEvent.Hide -> if (!visible) this else copy(visible = false, interacting = false)
 
-    PanelEvent.AutoHideElapsed -> if (!visible) this else copy(visible = false)
+    PanelEvent.AutoHideElapsed ->
+        if (!visible || interacting) this else copy(visible = false)
 
     is PanelEvent.ShowFace -> copy(visible = true, face = event.face)
 
-    PanelEvent.Home -> copy(visible = false)
+    PanelEvent.CollapseToPill -> copy(face = PanelFace.OVERVIEW)
+
+    is PanelEvent.SetInteracting -> copy(interacting = event.interacting)
+
+    PanelEvent.Home -> copy(visible = false, face = PanelFace.OVERVIEW, interacting = false)
 
     PanelEvent.SystemRecents -> copy(visible = false, face = PanelFace.OVERVIEW)
 
@@ -151,7 +180,8 @@ fun PanelState.reduce(event: PanelEvent): PanelState = when (event) {
         visible = false,
         face = PanelFace.OVERVIEW,
         origin = PanelOrigin.RESTORED,
-        lastStop = null
+        lastStop = null,
+        interacting = false
     )
 }
 
@@ -162,3 +192,7 @@ fun PanelState.toggleRecentsFace(): PanelState =
 /** Cycles between the overview and the notification list. */
 fun PanelState.toggleNotificationsFace(): PanelState =
     copy(face = if (face == PanelFace.NOTIFICATIONS) PanelFace.OVERVIEW else PanelFace.NOTIFICATIONS)
+
+/** Cycles between the overview and the habit-app list. */
+fun PanelState.toggleHabitsFace(): PanelState =
+    copy(face = if (face == PanelFace.HABITS) PanelFace.OVERVIEW else PanelFace.HABITS)

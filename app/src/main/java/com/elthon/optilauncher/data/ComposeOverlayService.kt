@@ -79,8 +79,12 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
             PanelBus.state.collect { state ->
                 if (overlayView == null && state.visible) showOverlay()
                 setTouchable(state.visible)
-                if (state.visible && state.face == com.elthon.optilauncher.core.panel.PanelFace.RECENTS) {
-                    controller.refreshRecents()
+                if (state.visible) {
+                    when (state.face) {
+                        com.elthon.optilauncher.core.panel.PanelFace.RECENTS -> controller.refreshRecents()
+                        com.elthon.optilauncher.core.panel.PanelFace.HABITS -> controller.refreshHabits()
+                        else -> Unit
+                    }
                 }
             }
         }
@@ -266,7 +270,13 @@ class OverlayPanelActions(private val context: Context) {
 
             PanelEvent.SystemNotifications -> systemActions.notifications()
 
-            is PanelEvent.ShowFace -> if (event.face == PanelFace.RECENTS) refreshRecents()
+            is PanelEvent.ShowFace -> when (event.face) {
+                PanelFace.RECENTS -> refreshRecents()
+                PanelFace.HABITS -> refreshHabits()
+                else -> Unit
+            }
+
+            PanelEvent.CollapseToPill -> Unit
 
             else -> Unit
         }
@@ -279,6 +289,20 @@ class OverlayPanelActions(private val context: Context) {
             val live = controller.liveRecentPackages()
             val list = recentsRepo.recents(selfPackage = self, livePackages = live)
             PanelBus.setRecents(list)
+        }
+    }
+
+    /**
+     * Best-effort habit list for the overlay, which has no access to the launcher's
+     * full habit engine. It reuses the same usage-history repository, so the list is
+     * still real usage, ordered by recency — never fabricated. The in-app panel
+     * shows the fully scored ranking; this is the overlay's honest approximation.
+     */
+    fun refreshHabits() {
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            val self = context.packageName
+            val list = recentsRepo.recents(selfPackage = self)
+            PanelBus.setHabits(list)
         }
     }
 
