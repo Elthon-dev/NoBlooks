@@ -36,6 +36,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.elthon.optilauncher.core.island.IslandEvent
 import com.elthon.optilauncher.core.island.IslandPage
+import com.elthon.optilauncher.core.panel.PanelEvent
+import com.elthon.optilauncher.core.panel.PanelFace
 import com.elthon.optilauncher.ui.components.GlanceWidget
 import com.elthon.optilauncher.ui.components.SuggestionCard
 import com.elthon.optilauncher.ui.control.ControlCenterOverlay
@@ -45,6 +47,7 @@ import com.elthon.optilauncher.ui.island.pages.HabitsPage
 import com.elthon.optilauncher.ui.island.pages.SettingsPage
 import com.elthon.optilauncher.ui.island.pages.WallpaperPage
 import com.elthon.optilauncher.ui.onboarding.Onboarding
+import com.elthon.optilauncher.ui.panel.ControlPanel
 import com.elthon.optilauncher.ui.theme.LocalNbColors
 import com.elthon.optilauncher.ui.theme.NbDim
 import com.elthon.optilauncher.ui.theme.NbMotion
@@ -295,6 +298,35 @@ fun HomeContent(
                 onWidgetAlpha = { provider -> widgetAlphaProvider = provider },
                 onDismiss = { controlOpen = false }
             )
+
+            // --- edge control panel ---------------------------------------
+            // The three-finger gesture's reveal target. Mounted always so its own
+            // open/close morph is whole; only shown once onboarding is behind us.
+            if (ui.onboardingComplete) {
+                ControlPanel(
+                    visible = ui.panel.visible,
+                    face = ui.panel.face,
+                    armed = ui.panel.gestureArmed,
+                    recents = ui.panelRecents,
+                    notifications = ui.panelNotifications,
+                    notificationsGranted = ui.notificationAccess,
+                    lastStop = ui.panel.lastStop,
+                    reducedMotion = reducedMotion,
+                    onHome = { viewModel.onPanelEvent(PanelEvent.Home) },
+                    onRecents = { viewModel.onPanelEvent(PanelEvent.SystemRecents) },
+                    onNotifications = { viewModel.onPanelEvent(PanelEvent.SystemNotifications) },
+                    onShowRecents = { viewModel.onPanelEvent(PanelEvent.ShowFace(PanelFace.RECENTS)) },
+                    onShowNotifications = {
+                        viewModel.onPanelEvent(PanelEvent.ShowFace(PanelFace.NOTIFICATIONS))
+                    },
+                    onOpenApp = viewModel::openRecentApp,
+                    onStopApp = viewModel::stopRecentApp,
+                    onOpenNotification = viewModel::openPanelNotification,
+                    onDismissNotification = viewModel::dismissPanelNotification,
+                    onReply = viewModel::replyPanelNotification,
+                    onDismiss = { viewModel.onPanelEvent(PanelEvent.Hide) }
+                )
+            }
 
             // --- first-run overlay ----------------------------------------
             if (!ui.onboardingComplete) {

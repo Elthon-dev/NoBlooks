@@ -96,6 +96,21 @@ class AppLauncher(context: Context) {
         null
     }
 
+    /**
+     * Launches [packageName] via its launcher intent. Used by the control panel's
+     * recents list, which only has a package name (no resolved component).
+     * Returns false when the package has no launchable activity.
+     */
+    fun launchPackage(packageName: String): Boolean = try {
+        val intent = appContext.packageManager.getLaunchIntentForPackage(packageName)
+            ?: return false
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        appContext.startActivity(intent)
+        true
+    } catch (_: Throwable) {
+        false
+    }
+
     fun openAppDetails(packageName: String): Boolean = try {
         val intent = Intent(
             android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,

@@ -15,4 +15,7 @@
     <string name="clipboard_label">NoBlooks diagnostics report</string>
     <string name="share_title">Share diagnostics report</string>
     <string name="report_unavailable">No report yet — run SCAN.</string>
+
+    <string name="a11y_service_summary">Edge control panel gestures</string>
+    <string name="a11y_service_description">Shows the NoBlooks control panel on a three-finger tap, and lets its Home, Recents and Notifications buttons work reliably. NoBlooks reads no screen content and performs no gestures on your behalf.</string>
 </resources>

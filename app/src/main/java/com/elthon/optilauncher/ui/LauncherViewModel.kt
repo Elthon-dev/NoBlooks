@@ -19,6 +19,13 @@ import com.elthon.optilauncher.core.launch.WindowMode
 import com.elthon.optilauncher.core.mic.MicIndicator
 import com.elthon.optilauncher.core.mic.MicPermission
 import com.elthon.optilauncher.core.mic.MicState
+import com.elthon.optilauncher.core.panel.PanelEvent
+import com.elthon.optilauncher.core.panel.PanelFace
+import com.elthon.optilauncher.core.panel.PanelNotification
+import com.elthon.optilauncher.core.panel.PanelState
+import com.elthon.optilauncher.core.panel.RecentApp
+import com.elthon.optilauncher.core.panel.StopVerdict
+import com.elthon.optilauncher.core.panel.reduce
 import com.elthon.optilauncher.core.settings.IconTreatment
 import com.elthon.optilauncher.core.settings.SettingsRepository
 import com.elthon.optilauncher.core.settings.SettingsState
@@ -31,8 +38,13 @@ import com.elthon.optilauncher.data.AppRepository
 import com.elthon.optilauncher.data.IconRenderer
 import com.elthon.optilauncher.data.LaunchRecorder
 import com.elthon.optilauncher.data.MicLevelMeter
+import com.elthon.optilauncher.data.NotificationBridge
+import com.elthon.optilauncher.data.PanelController
+import com.elthon.optilauncher.data.PanelSignals
 import com.elthon.optilauncher.data.PermissionStatus
+import com.elthon.optilauncher.data.RecentsRepository
 import com.elthon.optilauncher.data.SharedPreferencesStore
+import com.elthon.optilauncher.data.SystemActions
 import com.elthon.optilauncher.data.SystemUsageRepository
 import com.elthon.optilauncher.data.UsageAccess
 import com.elthon.optilauncher.data.WallpaperThemeController
@@ -75,7 +87,15 @@ data class LauncherUiState(
      * page can offer the one action that actually helps the ColorOS-style "blank
      * wallpaper on return to Home" delay. Never claims whether the app is exempt.
      */
-    val oemPolicy: OemBackgroundPolicy = OemBackgroundPolicy.NONE
+    val oemPolicy: OemBackgroundPolicy = OemBackgroundPolicy.NONE,
+    /** The edge control panel's state (visibility, face, arming). */
+    val panel: PanelState = PanelState(),
+    /** The panel's best-effort app switcher, newest first. */
+    val panelRecents: List<RecentApp> = emptyList(),
+    /** Notifications the user might have missed, newest first. */
+    val panelNotifications: List<PanelNotification> = emptyList(),
+    /** True while the notification-access grant is present. */
+    val notificationAccess: Boolean = false
 )
 
 /**
@@ -95,6 +115,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private val wallpaperController = WallpaperThemeController(app)
     private val iconRenderer = IconRenderer(app)
     private val micMeter = MicLevelMeter()
+    private val recentsRepo = RecentsRepository(app)
+    private val panelController = PanelController(app)
+    private val systemActions = SystemActions(app)
+    private val recentsRepo = RecentsRepository(app)
+    private val panelController = PanelController(app)
+    private val systemActions = SystemActions(app)
 
     private val _ui = kotlinx.coroutines.flow.MutableStateFlow(LauncherUiState())
     val ui: kotlinx.coroutines.flow.StateFlow<LauncherUiState> = _ui
@@ -162,6 +188,27 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 refreshHabits()
             }
         }
+
+        // The control panel listens to three external signals:
+        //  - the accessibility service's three-finger tap (reveal requests),
+        //  - the notification listener's live notification list,
+        //  - the notification-access grant state (read on resume, not polled).
+        viewModelScope.launch {
+            PanelSignals.revealTick.collect {
+                onPanelEvent(PanelEvent.ThreeFingerTap)
+            }
+        }
+        viewModelScope.launch {
+            NotificationBridge.notifications.collect { list ->
+                update { it.copy(panelNotifications = list) }
+            }
+        }
+        viewModelScope.launch {
+            NotificationBridge.connected.collect { connected ->
+                update { it.copy(notificationAccess = connected) }
+            }
+        }
+        refreshPanelArmed()
     }
 
     override fun onCleared() {
@@ -172,7 +219,111 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         super.onCleared()
     }
 
-    // ---------------------------------------------------------------- island
+    // --------------------------------------------------------------- panel
+
+    /**
+     * The single entry point for panel transitions, mirroring [onEvent].
+     *
+     * Actions that touch the system (Home / Recents / Notifications) are performed
+     * here, then the state transition lands the panel hidden — so the panel is never
+     * left open behind the thing it opened.
+     */
+    fun onPanelEvent(event: PanelEvent) {
+        val previous = _ui.value.panel
+
+        when (event) {
+            PanelEvent.Home -> systemActions.home()
+
+            PanelEvent.SystemRecents -> {
+                // Prefer the real system overview; if this ROM won't show it, open
+                // our own list instead of silently doing nothing.
+                val opened = systemActions.recents()
+                if (!opened) {
+                    update { it.copy(panel = it.panel.copy(visible = true, face = PanelFace.RECENTS)) }
+                    refreshPanelRecents()
+                    return
+                }
+            }
+
+            PanelEvent.SystemNotifications -> systemActions.notifications()
+
+            is PanelEvent.ShowFace -> if (event.face == PanelFace.RECENTS) refreshPanelRecents()
+
+            PanelEvent.EnterHome -> {
+                settingsRepo.update { it.copy(onboardingComplete = true) }
+                update { it.copy(settings = settingsRepo.load(), onboardingComplete = true) }
+                refreshHomeRole()
+            }
+
+            else -> Unit
+        }
+
+        val next = previous.reduce(event)
+        if (next != previous) update { it.copy(panel = next) }
+    }
+
+    /** Re-reads whether the accessibility gesture is available. */
+    fun refreshPanelArmed() {
+        val armed = com.elthon.optilauncher.data.AccessibilityPanelService.isEnabled(getApplication())
+        update { it.copy(panel = it.panel.reduce(PanelEvent.SetGestureArmed(armed))) }
+    }
+
+    private suspend fun loadPanelRecents() {
+        val self = getApplication<Application>().packageName
+        val live = panelController.liveRecentPackages()
+        val list = recentsRepo.recents(selfPackage = self, livePackages = live)
+        update { it.copy(panelRecents = list) }
+    }
+
+    fun refreshPanelRecents() {
+        viewModelScope.launch { loadPanelRecents() }
+    }
+
+    fun openRecentApp(app: RecentApp) {
+        update { it.copy(panel = it.panel.reduce(PanelEvent.Hide)) }
+        if (!appLauncher.launchPackage(app.packageName)) {
+            showMessage("Could not open ${app.label}")
+        }
+    }
+
+    /**
+     * Long-press / stop-button on a recents row. Attempts a Shizuku force-stop and
+     * reports the *verdict* — never a bare success. Without Shizuku, it opens the
+     * app's info page, which is one tap from the system's own Force stop.
+     */
+    fun stopRecentApp(app: RecentApp) {
+        viewModelScope.launch {
+            if (!com.elthon.optilauncher.data.ShizukuBridge.available()) {
+                appLauncher.openAppDetails(app.packageName)
+                update { it.copy(panel = it.panel.reduce(PanelEvent.SetStopVerdict(StopVerdict.UNAVAILABLE))) }
+                return@launch
+            }
+            val verdict = panelController.forceStop(app.packageName)
+            update { it.copy(panel = it.panel.reduce(PanelEvent.SetStopVerdict(verdict))) }
+            loadPanelRecents()
+        }
+    }
+
+    fun openPanelNotification(n: PanelNotification) {
+        // Opening a notification means opening its app; we do not have its
+        // contentIntent token, so the honest action is to launch the app.
+        update { it.copy(panel = it.panel.reduce(PanelEvent.Hide)) }
+        if (!appLauncher.launchPackage(n.packageName)) {
+            showMessage("Could not open that app")
+        }
+    }
+
+    fun dismissPanelNotification(n: PanelNotification) {
+        panelController.dismissNotification(n.key)
+    }
+
+    fun replyPanelNotification(n: PanelNotification, text: String) {
+        if (text.isBlank()) return
+        val sent = panelController.reply(n.key, text)
+        showMessage(if (sent) "Reply sent" else "This app can't be replied to here")
+    }
+
+    // --------------------------------------------------------------- island
 
     fun onEvent(event: IslandEvent) {
         val previous = _ui.value.island
@@ -448,6 +599,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             // Only a stale cache is refreshed here; a fresh one is simply reused.
             refreshHabits(force = false)
         }
+        // The user may have toggled notification access or the accessibility service
+        // while away, so the panel's armed / grant state is re-read — both are cheap
+        // synchronous reads, never binder scans.
+        refreshPanelArmed()
     }
 
     fun openWallpaperPicker() {

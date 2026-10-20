@@ -95,6 +95,14 @@ object NbDim {
     /** The control centre floats inside the screen, leaving a strip of wallpaper. */
     val ControlMargin = 26.dp
     val ControlMarginLandscape = 18.dp
+
+    /**
+     * The edge control panel. Portrait sits centred at the bottom, narrower than the
+     * expanded island; landscape widens so the app-switcher list reads as a strip
+     * rather than a tall column.
+     */
+    val ControlWidthPortrait = 340.dp
+    val ControlWidthLandscape = 460.dp
 }
 
 /**

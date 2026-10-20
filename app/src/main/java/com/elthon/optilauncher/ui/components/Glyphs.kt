@@ -21,7 +21,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /** Icon vocabulary for the launcher — hand-drawn, monochrome, no icon library. */
-enum class Glyph { SEARCH, MIC, MIC_OFF, GRID, CHART, IMAGE, SLIDERS, CLOSE, PIN, CHECK, CHEVRON, SPLIT, WINDOW, REFRESH, TRASH, INFO, OPEN, HOME, DOT, KEYBOARD, WIFI, BLUETOOTH, CELLULAR, AIRPLANE }
+enum class Glyph { SEARCH, MIC, MIC_OFF, GRID, CHART, IMAGE, SLIDERS, CLOSE, PIN, CHECK, CHEVRON, SPLIT, WINDOW, REFRESH, TRASH, INFO, OPEN, HOME, DOT, KEYBOARD, WIFI, BLUETOOTH, CELLULAR, AIRPLANE, RECENTS, BELL, STOP }
 
 @Composable
 fun IconGlyph(
@@ -416,6 +416,67 @@ fun IconGlyph(
                     tint,
                     start = Offset(px(0.42f), px(0.60f)),
                     end = Offset(px(0.58f), px(0.60f)),
+                    strokeWidth = sw,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            Glyph.RECENTS -> {
+                // Two stacked cards: the classic "overview" affordance.
+                drawRoundRect(
+                    tint,
+                    topLeft = Offset(px(0.20f), px(0.30f)),
+                    size = Size(px(0.44f) - px(0.20f), px(0.70f) - px(0.30f)),
+                    cornerRadius = CornerRadius(sw, sw),
+                    style = stroke
+                )
+                drawRoundRect(
+                    tint,
+                    topLeft = Offset(px(0.36f), px(0.24f)),
+                    size = Size(px(0.60f) - px(0.36f), px(0.64f) - px(0.24f)),
+                    cornerRadius = CornerRadius(sw, sw),
+                    style = stroke
+                )
+            }
+
+            Glyph.BELL -> {
+                val bell = Path().apply {
+                    moveTo(px(0.30f), px(0.68f))
+                    cubicTo(px(0.34f), px(0.54f), px(0.34f), px(0.44f), px(0.36f), px(0.38f))
+                    cubicTo(px(0.40f), px(0.26f), px(0.60f), px(0.26f), px(0.64f), px(0.38f))
+                    cubicTo(px(0.66f), px(0.44f), px(0.66f), px(0.54f), px(0.70f), px(0.68f))
+                    close()
+                }
+                drawPath(bell, tint, style = stroke)
+                drawLine(
+                    tint,
+                    start = Offset(px(0.44f), px(0.74f)),
+                    end = Offset(px(0.56f), px(0.74f)),
+                    strokeWidth = sw,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    tint,
+                    start = Offset(px(0.50f), px(0.20f)),
+                    end = Offset(px(0.50f), px(0.27f)),
+                    strokeWidth = sw,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            Glyph.STOP -> {
+                drawCircle(tint, s * 0.28f, Offset(px(0.50f), px(0.50f)), style = stroke)
+                drawLine(
+                    tint,
+                    start = Offset(px(0.40f), px(0.40f)),
+                    end = Offset(px(0.60f), px(0.60f)),
+                    strokeWidth = sw,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    tint,
+                    start = Offset(px(0.60f), px(0.40f)),
+                    end = Offset(px(0.40f), px(0.60f)),
                     strokeWidth = sw,
                     cap = StrokeCap.Round
                 )

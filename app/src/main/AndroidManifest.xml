@@ -100,6 +100,40 @@
             android:exported="true"
             android:multiprocess="false"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <!--
+          Notification reader for the control panel. Bound by the system only after
+          the user grants notification access; until then it is simply never started
+          and the panel shows an "access required" state. It never posts anything.
+        -->
+        <service
+            android:name=".data.AppNotificationListener"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!--
+          The three-finger gesture and the panel's global Home/Recents/Shade actions.
+          Declared but never enabled by the app: the user turns it on in Android's
+          accessibility settings (the panel deep-links there). While disabled, the
+          pill is still tapped directly and the gesture is simply inert.
+        -->
+        <service
+            android:name=".data.AccessibilityPanelService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
     </application>
 
 </manifest>
