@@ -56,6 +56,9 @@ android {
     buildFeatures {
         buildConfig = true
         compose = true
+        // Shizuku's public API no longer exposes newProcess; the supported way to run
+        // shell commands is a UserService bound over AIDL.
+        aidl = true
     }
 
     lint {
