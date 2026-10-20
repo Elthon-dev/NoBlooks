@@ -122,6 +122,30 @@ called out as **unverified** rather than claimed as working.
   state actually changed. A 7-day `queryEvents` on every return-to-Home was throwing
   away the usage cache each time and is gone. The activity sets
   `alwaysRetainTaskState="true"` so the task survives as long as the process does.
+- **The edge control panel is honest about what a third-party app can and cannot do.**
+  It is a Compose surface inside the launcher's own window (`ui/panel/ControlPanel.kt`,
+  state in `core/panel/PanelContract.kt`), revealed by the accessibility service's
+  three-finger tap. Hard truths it must never fake:
+  - A **three-finger tap anywhere** needs an `AccessibilityService` with
+    `FLAG_REQUEST_MULTI_FINGER_GESTURES`; an overlay sees only its own pixels. While
+    the service is off (`PanelState.gestureArmed == false`) the panel is still usable by
+    tapping the pill, and the header says the gesture needs enabling — it never claims
+    the gesture is live.
+  - **Force-stopping another app** is impossible through normal APIs; it goes through
+    Shizuku (`am force-stop`, shell uid 2000). The result is a `StopVerdict`, not a
+    boolean: `STOPPED` / `REVIVED` (the ROM restarted it) / `UNAVAILABLE` / `REFUSED` /
+    `UNVERIFIED`. Without Shizuku the row opens the app-info page instead. Never report
+    a bare "stopped".
+  - The **recents list** is an MRU package list from `UsageStats` `ACTIVITY_RESUMED`
+    (plus live-process corroboration from `dumpsys activity recents` via Shizuku), not
+    the system Overview stack — package-level only, no task ids or thumbnails.
+  - **Notifications** need `NotificationListenerService` (special access); the panel
+    shows a "grant access" state until it is present. Inline reply via `RemoteInput` is
+    best-effort — the UI says "Reply sent", never "delivered".
+  - It **never renders a package name**: unlabeled recents entries and untitled
+    notifications show "Unknown app" / "Notification", never `com.*`.
+  - `Hide` / `AutoHideElapsed` are idempotent and a three-finger tap never leaves the
+    panel hidden; the same rules as the island, unit-tested in `PanelStateTest`.
 - **The ColorOS/OxygenOS return delay is a system behaviour, not ours.** On
   OPPO/OnePlus/Realme ROMs, third-party launchers show a blank-wallpaper stretch when
   swiping Home, with gesture navigation only (3-button is instant), and it affects
