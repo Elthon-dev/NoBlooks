@@ -151,13 +151,13 @@ fun ControlCenterOverlay(
         val targetWidthPx = with(density) {
             (maxWidth - NbDim.ControlMargin * 2f).coerceAtMost(360.dp).toPx()
         }
-        val targetHeightPx = contentHeightPx
-            .coerceAtLeast(with(density) { 120.dp.toPx() })
+        val minHeightPx = with(density) { 120.dp.toPx() }
+        val targetHeightPx = contentHeightPx.toFloat()
+            .coerceAtLeast(minHeightPx)
             .coerceAtMost(availableHeightPx)
-        val targetX =
-            screenWidthPx - targetWidthPx - marginPx
-        val targetY = originY
-            .coerceIn(marginPx, (screenHeightPx - targetHeightPx - marginPx).coerceAtLeast(marginPx))
+        val targetX = screenWidthPx - targetWidthPx - marginPx
+        val maxY = (screenHeightPx - targetHeightPx - marginPx).coerceAtLeast(marginPx)
+        val targetY = originY.coerceIn(marginPx, maxY)
 
         // Scrim: pure tap-catcher, faded with progress so a partial back gesture
         // never leaves a half-black screen behind.
