@@ -2,17 +2,22 @@
 <!--
   Declares what the panel's accessibility service is allowed to do.
 
-  It requests ONLY the multi-finger gesture family plus the global actions it
-  needs (Home / Recents / Notifications). It deliberately does NOT request
-  window-content retrieval or gesture dispatch — those are more invasive than this
-  feature needs, and asking for them would make the permission scarier than it is.
+  It requests ONLY the multi-finger gesture family, the global actions it needs
+  (Home / Recents / Notifications), and key-event observation for the "both volume
+  keys" reveal. It deliberately does NOT request window-content retrieval or
+  gesture dispatch — those are more invasive than this feature needs, and asking
+  for them would make the permission scarier than it is.
+
+  canRequestFilterKeyEvents is required for the key-event flag to take effect; we
+  observe the keys and never swallow them, so volume keeps working.
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagRequestMultiFingerGestures"
+    android:accessibilityFlags="flagRequestMultiFingerGestures|flagRequestFilterKeyEvents"
     android:canPerformGestures="false"
     android:canRetrieveWindowContent="false"
+    android:canRequestFilterKeyEvents="true"
     android:description="@string/a11y_service_description"
     android:notificationTimeout="100"
     android:summary="@string/a11y_service_summary" />

@@ -99,6 +99,10 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    // The always-on overlay is hosted by a LifecycleService in the app process; a
+    // Service has no lifecycle/saved-state owners of its own, so Compose needs these.
+    implementation("androidx.lifecycle:lifecycle-service:2.8.7")
+    implementation("androidx.savedstate:savedstate:1.2.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 

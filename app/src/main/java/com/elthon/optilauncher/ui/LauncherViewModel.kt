@@ -95,7 +95,15 @@ data class LauncherUiState(
     /** Notifications the user might have missed, newest first. */
     val panelNotifications: List<PanelNotification> = emptyList(),
     /** True while the notification-access grant is present. */
-    val notificationAccess: Boolean = false
+    val notificationAccess: Boolean = false,
+    /**
+     * True while "Display over other apps" is granted. This is only the permission
+     * bit; the ROM can still refuse the window, so the UI never equates this with
+     * "the overlay is showing".
+     */
+    val overlayGranted: Boolean = false,
+    /** True while the accessibility service is enabled (the reliable reveal path). */
+    val accessibilityEnabled: Boolean = false
 )
 
 /**
@@ -261,8 +269,20 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Re-reads whether the accessibility gesture is available. */
     fun refreshPanelArmed() {
-        val armed = com.elthon.optilauncher.data.AccessibilityPanelService.isEnabled(getApplication())
-        update { it.copy(panel = it.panel.reduce(PanelEvent.SetGestureArmed(armed))) }
+        val app = getApplication<Application>()
+        val armed = com.elthon.optilauncher.data.AccessibilityPanelService.isEnabled(app)
+        val overlay = try {
+            android.provider.Settings.canDrawOverlays(app)
+        } catch (_: Throwable) {
+            false
+        }
+        update {
+            it.copy(
+                panel = it.panel.reduce(PanelEvent.SetGestureArmed(armed)),
+                accessibilityEnabled = armed,
+                overlayGranted = overlay
+            )
+        }
     }
 
     private suspend fun loadPanelRecents() {
@@ -629,6 +649,27 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         showMessage(
             if (opened) "Allow NoBlooks to run in the background"
             else "No battery settings screen on this device"
+        )
+    }
+
+    /**
+     * Opens the overlay-permission screen. The panel works in-window without it, but
+     * only the overlay lets it appear over other apps — so the message is careful:
+     * granting it does not guarantee the window shows (ColorOS can still refuse).
+     */
+    fun openOverlaySettings() {
+        val opened = appLauncher.openOverlaySettings()
+        showMessage(
+            if (opened) "Allow \"Display over other apps\", then come back"
+            else "No overlay-permission screen on this device"
+        )
+    }
+
+    fun openAccessibilitySettings() {
+        val opened = appLauncher.openAccessibilitySettings()
+        showMessage(
+            if (opened) "Enable NoBlooks under Installed apps"
+            else "No accessibility settings screen on this device"
         )
     }
 

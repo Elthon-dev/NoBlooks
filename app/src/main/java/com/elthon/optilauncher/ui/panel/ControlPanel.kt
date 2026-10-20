@@ -88,7 +88,13 @@ fun ControlPanel(
     onDismissNotification: (PanelNotification) -> Unit,
     onReply: (PanelNotification, String) -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * False in the system overlay: an overlay window cannot take focus, so a text
+     * field there would never raise the keyboard. The reply affordance is hidden
+     * rather than shown-but-broken.
+     */
+    allowReply: Boolean = true
 ) {
     val colors = LocalNbColors.current
     val configuration = LocalConfiguration.current
@@ -217,6 +223,7 @@ fun ControlPanel(
                 PanelFace.NOTIFICATIONS -> NotificationsBody(
                     notifications = notifications,
                     granted = notificationsGranted,
+                    allowReply = allowReply,
                     onOpen = onOpenNotification,
                     onDismiss = onDismissNotification,
                     onReply = onReply
@@ -385,6 +392,7 @@ private fun RecentsBody(
 private fun NotificationsBody(
     notifications: List<PanelNotification>,
     granted: Boolean,
+    allowReply: Boolean,
     onOpen: (PanelNotification) -> Unit,
     onDismiss: (PanelNotification) -> Unit,
     onReply: (PanelNotification, String) -> Unit
@@ -403,7 +411,7 @@ private fun NotificationsBody(
     }
     LazyColumn(Modifier.fillMaxWidth().heightIn(max = 380.dp)) {
         items(notifications, key = { it.key }) { n ->
-            NotificationRow(n, onOpen, onDismiss, onReply)
+            NotificationRow(n, allowReply, onOpen, onDismiss, onReply)
             Hairline(Modifier.padding(horizontal = 16.dp))
         }
     }
@@ -412,6 +420,7 @@ private fun NotificationsBody(
 @Composable
 private fun NotificationRow(
     n: PanelNotification,
+    allowReply: Boolean,
     onOpen: (PanelNotification) -> Unit,
     onDismiss: (PanelNotification) -> Unit,
     onReply: (PanelNotification, String) -> Unit
@@ -437,7 +446,7 @@ private fun NotificationRow(
             NbText(n.preview, style = NbType.bodySmall, color = colors.onSurfaceDim, maxLines = 2)
         }
         Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (n.canReply) {
+            if (n.canReply && allowReply) {
                 NbText(
                     "Reply",
                     style = NbType.mono,

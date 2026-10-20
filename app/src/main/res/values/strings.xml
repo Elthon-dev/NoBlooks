@@ -17,5 +17,12 @@
     <string name="report_unavailable">No report yet — run SCAN.</string>
 
     <string name="a11y_service_summary">Edge control panel gestures</string>
-    <string name="a11y_service_description">Shows the NoBlooks control panel on a three-finger tap, and lets its Home, Recents and Notifications buttons work reliably. NoBlooks reads no screen content and performs no gestures on your behalf.</string>
+    <string name="a11y_service_description">Shows the NoBlooks control panel on a three-finger tap (and, best-effort, when both volume keys are pressed together), and lets its Home, Recents and Notifications buttons work reliably. NoBlooks reads no screen content and performs no gestures on your behalf.</string>
+
+    <!-- The always-on overlay foreground service. Its notification is the platform
+         requirement for staying resident; the text says plainly what keeps running. -->
+    <string name="overlay_channel_name">Edge panel</string>
+    <string name="overlay_channel_description">Keeps the NoBlooks control panel ready to appear over any app.</string>
+    <string name="overlay_notification_title">NoBlooks edge panel is ready</string>
+    <string name="overlay_notification_text">Three-finger tap or both volume keys opens the panel.</string>
 </resources>

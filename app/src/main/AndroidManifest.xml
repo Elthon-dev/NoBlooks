@@ -16,11 +16,28 @@
       Settings page. It is never requested at startup, there is no background
       recording, and no foreground service is started.
 
-      No network, storage, accessibility, or overlay permissions.
+      SYSTEM_ALERT_WINDOW: the always-on edge panel is drawn as a system overlay so
+      it can appear over any app. Declaring it is what makes the app appear in
+      "Display over other apps"; it is never granted automatically, and on API 34+
+      the overlay is hosted by a foreground service (below) or the system tears it
+      down. ColorOS can still refuse the window even when the permission is on —
+      the app reports that state and never claims the overlay showed.
+
+      FOREGROUND_SERVICE + FOREGROUND_SERVICE_SPECIAL_USE: required for that service
+      on API 34+. `specialUse` is the honest type — this is not media, location or a
+      call.
+
+      RECEIVE_BOOT_COMPLETED: best-effort re-arm of the panel after a reboot. The
+      ROM may block it; nothing is claimed if it does.
     -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!--
       Shizuku: OPTIONAL elevated access for the control centre's radio tiles.
       Nothing is requested at startup; the tiles work read-only without it and the
@@ -134,6 +151,38 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <!--
+          The always-on edge panel, hosted as a system overlay so it works over any
+          app — not just inside the launcher. It is a foreground service because on
+          API 34+ an overlay added from a background service is torn down silently.
+          `specialUse` is the honest foreground type; the property below is what the
+          platform requires for that type.
+        -->
+        <service
+            android:name=".data.ComposeOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the edge control panel ready to appear over other apps" />
+        </service>
+
+        <!--
+          Best-effort re-arm after a reboot. ColorOS and other ROMs may deliver this
+          late or not at all; the panel simply stays off until the user opens the app
+          or triggers the accessibility service again. We never claim it re-armed.
+        -->
+        <receiver
+            android:name=".data.BootReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

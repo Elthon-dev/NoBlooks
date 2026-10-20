@@ -49,6 +49,8 @@ fun SettingsPage(
     isDefaultHome: Boolean,
     homeRoleNote: String,
     oemPolicy: OemBackgroundPolicy,
+    overlayGranted: Boolean,
+    accessibilityEnabled: Boolean,
     pinnedCount: Int,
     appsCount: Int,
     historyDays: Int,
@@ -60,6 +62,8 @@ fun SettingsPage(
     onMicPermissionAction: () -> Unit,
     onOpenHomeSettings: () -> Unit,
     onOpenBackgroundPolicySettings: () -> Unit,
+    onOpenOverlaySettings: () -> Unit,
+    onOpenAccessibilitySettings: () -> Unit,
     onAppDetails: () -> Unit,
     onClearHistory: () -> Unit,
     onClearFavorites: () -> Unit,
@@ -150,6 +154,27 @@ fun SettingsPage(
                 homeRoleNote
             },
             onClick = onOpenHomeSettings
+        )
+        OptionRow(
+            title = "Edge panel gestures",
+            description = if (accessibilityEnabled) {
+                "Enabled — three-finger tap reveals the panel anywhere. " +
+                    "Both volume keys also work, best-effort."
+            } else {
+                "Off — enable NoBlooks under Installed apps to reveal the panel " +
+                    "with a three-finger tap anywhere."
+            },
+            onClick = onOpenAccessibilitySettings
+        )
+        OptionRow(
+            title = "Panel over other apps",
+            description = if (overlayGranted) {
+                "Granted — the panel can appear over other apps. Some ROMs " +
+                    "(ColorOS) may still refuse the window; that state is not readable."
+            } else {
+                "Off — without this the panel works only inside NoBlooks."
+            },
+            onClick = onOpenOverlaySettings
         )
         if (oemPolicy.wantsKeepAliveHint) {
             OptionRow(

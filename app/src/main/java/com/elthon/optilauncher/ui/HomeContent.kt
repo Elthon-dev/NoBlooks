@@ -252,6 +252,8 @@ fun HomeContent(
                             isDefaultHome = ui.isDefaultHome,
                             homeRoleNote = ui.homeRoleNote,
                             oemPolicy = ui.oemPolicy,
+                            overlayGranted = ui.overlayGranted,
+                            accessibilityEnabled = ui.accessibilityEnabled,
                             pinnedCount = ui.settings.favorites.size,
                             appsCount = ui.apps.size,
                             historyDays = ui.habitSummary?.historyDays ?: 0,
@@ -274,6 +276,8 @@ fun HomeContent(
                             },
                             onOpenHomeSettings = viewModel::openHomeSettings,
                             onOpenBackgroundPolicySettings = viewModel::openBackgroundPolicySettings,
+                            onOpenOverlaySettings = viewModel::openOverlaySettings,
+                            onOpenAccessibilitySettings = viewModel::openAccessibilitySettings,
                             onAppDetails = { viewModel.openAppDetails() },
                             onClearHistory = viewModel::clearHabitHistory,
                             onClearFavorites = viewModel::clearFavorites

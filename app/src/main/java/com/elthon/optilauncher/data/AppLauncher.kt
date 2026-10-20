@@ -221,9 +221,52 @@ class AppLauncher(context: Context) {
         return false
     }
 
+    /**
+     * Opens the "Display over other apps" screen for this app.
+     *
+     * `ACTION_MANAGE_OVERLAY_PERMISSION` with a package URI is the documented way to
+     * land on the per-app overlay toggle. On Android 12+ the entry is often hidden
+     * from the main "Special access" list (the user must reach it by search or the
+     * overflow menu), which is exactly why a direct deep-link matters here. If the
+     * per-app target does not resolve we fall back to the general overlay list.
+     */
+    fun openOverlaySettings(): Boolean {
+        val self = appContext.packageName
+        val candidates = listOf(
+            Intent(
+                android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                android.net.Uri.parse("package:$self")
+            ),
+            Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+        )
+        for (intent in candidates) {
+            try {
+                appContext.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return true
+            } catch (_: Throwable) {
+                // Try the less specific target.
+            }
+        }
+        return false
+    }
+
+    /**
+     * Opens the system accessibility settings, where the edge-panel service is
+     * toggled on. Deliberately the general screen rather than a per-service deep
+     * link: the latter is non-public and varies per ROM.
+     */
+    fun openAccessibilitySettings(): Boolean = try {
+        appContext.startActivity(
+            Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        true
+    } catch (_: Throwable) {
+        false
+    }
+
     companion object {
         private const val TAG = "AppLauncher"
-
         /** Mirrors of Intent flags used in tests of the planner output. */
         val NORMAL_FLAGS: Int =
             IntentFlags.FLAG_ACTIVITY_NEW_TASK or IntentFlags.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED

@@ -146,6 +146,31 @@ called out as **unverified** rather than claimed as working.
     notifications show "Unknown app" / "Notification", never `com.*`.
   - `Hide` / `AutoHideElapsed` are idempotent and a three-finger tap never leaves the
     panel hidden; the same rules as the island, unit-tested in `PanelStateTest`.
+- **The always-on panel is a foreground-service overlay, and it stays honest about
+  its limits.**
+  - Over the launcher window the panel is a Compose surface (`ui/panel/ControlPanel.kt`).
+    Over *other* apps it is the same composable hosted by `data/ComposeOverlayService`, a
+    `LifecycleService` that owns the process-wide `data/PanelBus` state and the same
+    system actions. The overlay is a `TYPE_APPLICATION_OVERLAY` window that stays mounted
+    for the service's life; only its touchability tracks visibility (`FLAG_NOT_TOUCHABLE`
+    toggled via `updateViewLayout`), because re-adding a `ComposeView` breaks its
+    composition.
+  - On API 34+ an overlay added from a **background** service is torn down silently, so
+    the service is a **foreground service** with `FOREGROUND_SERVICE_SPECIAL_USE` and the
+    `android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE` manifest property. `SYSTEM_ALERT_WINDOW`
+    is a special permission: declaring it is what surfaces "Display over other apps".
+  - **ColorOS/MIUI can refuse the window even when `canDrawOverlays()` is true** (`addView`
+    throws a security error). The code reports the permission state and never claims the
+    overlay showed. Persistence is best-effort (`START_STICKY`, a boot receiver that only
+    fires when the permission and the service are already on) — never "always on".
+  - **Reply is disabled in the overlay** (`allowReply = false`): a `FLAG_NOT_FOCUSABLE`
+    window cannot raise the keyboard. Reply stays available in the in-app panel only.
+  - Reveal has **two triggers**: the three-finger tap (reliable, needs the accessibility
+    service) and **both volume keys together** (best-effort only — Android already uses
+    hold-both-volume as the global accessibility shortcut, and only one service may filter
+    key events). The chord timing is pure logic in `core/panel/VolumeChord.kt`, tested in
+    `VolumeChordTest`; the service observes the keys and **never swallows them**, so
+    volume keeps working. Reveal adds a short guarded vibration tick.
 - **The ColorOS/OxygenOS return delay is a system behaviour, not ours.** On
   OPPO/OnePlus/Realme ROMs, third-party launchers show a blank-wallpaper stretch when
   swiping Home, with gesture navigation only (3-button is instant), and it affects
