@@ -153,6 +153,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private var messageJob: Job? = null
     private var iconsJob: Job? = null
     private var habitJob: Job? = null
+    private var lastReturnHandledAtMs = 0L
 
     init {
         val settings = settingsRepo.load()
@@ -635,6 +636,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
      * is actually warranted — never a forced full scan.
      */
     fun onReturnedHome() {
+        // onNewIntent and onResume both fire for the same Home press on a singleTask
+        // activity; the probes are cheap but not free, so collapse the duplicate.
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastReturnHandledAtMs < RETURN_DEBOUNCE_MS) return
+        lastReturnHandledAtMs = now
         viewModelScope.launch {
             // Both probes are binder calls; keep them off the main thread so the
             // first frame after the transition is never waiting on system state.
@@ -788,6 +794,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private const val MESSAGE_MILLIS = 2600L
+        private const val RETURN_DEBOUNCE_MS = 400L
         private val DARK_TINT = 0xFFEDEDEF.toInt()
         private val LIGHT_TINT = 0xFF16171A.toInt()
     }

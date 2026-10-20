@@ -16,6 +16,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.elthon.optilauncher.core.panel.PanelEvent
+import com.elthon.optilauncher.data.PanelBus
 import com.elthon.optilauncher.ui.HomeContent
 import com.elthon.optilauncher.ui.LauncherViewModel
 
@@ -79,7 +81,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        // The in-app panel owns the screen while the launcher is visible; clear any
+        // stale overlay panel and suppress the overlay window until we leave.
+        PanelBus.setAppForeground(true)
+        PanelBus.dispatch(PanelEvent.Hide)
+    }
+
     override fun onStop() {
+        PanelBus.setAppForeground(false)
         super.onStop()
         wasStopped = true
     }
@@ -88,9 +99,9 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         // HOME was pressed again. This is the return path, so it must stay cheap:
-        // the app list comes from the repository cache and the system re-probes run
-        // off the main thread. No forced usage-history scan here.
-        viewModel.refreshApps()
+        // the system re-probes run off the main thread and the app list comes from
+        // the repository cache (package changes already invalidate it). No forced
+        // usage-history scan here.
         viewModel.onReturnedHome()
     }
 
@@ -137,7 +148,6 @@ class MainActivity : ComponentActivity() {
 
     private fun registerAnimatorScaleObserver() {
         try {
-            Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
             contentResolver.registerContentObserver(
                 Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE),
                 false,

@@ -310,7 +310,6 @@ fun HomeContent(
                 ControlPanel(
                     visible = ui.panel.visible,
                     face = ui.panel.face,
-                    armed = ui.panel.gestureArmed,
                     recents = ui.panelRecents,
                     habits = ui.panelHabits,
                     notifications = ui.panelNotifications,

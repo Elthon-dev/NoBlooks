@@ -204,6 +204,13 @@ object NbType {
         fontWeight = FontWeight.Normal,
         fontFamily = FontFamily.Monospace
     )
+    /** Compact clock for the edge pill's 26dp status strip — not the 52sp widget clock. */
+    val pillClock = TextStyle(
+        fontSize = 15.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 0.2.sp,
+        fontFamily = FontFamily.Monospace
+    )
     val tab = TextStyle(
         fontSize = 10.sp,
         fontWeight = FontWeight.Medium,

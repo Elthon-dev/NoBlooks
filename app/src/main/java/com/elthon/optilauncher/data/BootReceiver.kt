@@ -40,7 +40,7 @@ class BootReceiver : BroadcastReceiver() {
         }
         if (!canOverlay) return
         if (!AccessibilityPanelService.isEnabled(context)) return
-        ComposeOverlayService.show(context)
+        ComposeOverlayService.arm(context)
     }
 
     private companion object {

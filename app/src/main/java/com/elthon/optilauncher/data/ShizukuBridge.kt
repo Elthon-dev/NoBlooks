@@ -7,6 +7,7 @@ import android.os.IBinder
 import androidx.annotation.Keep
 import com.elthon.optilauncher.IShellService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import rikka.shizuku.Shizuku.UserServiceArgs
@@ -139,7 +140,7 @@ object ShizukuBridge {
             bindService()
             var waited = 0
             while (service == null && waited < 1000) {
-                Thread.sleep(50)
+                delay(50)
                 waited += 50
             }
         }

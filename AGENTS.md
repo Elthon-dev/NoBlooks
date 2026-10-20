@@ -172,9 +172,12 @@ called out as **unverified** rather than claimed as working.
     Over *other* apps it is the same composable hosted by `data/ComposeOverlayService`, a
     `LifecycleService` that owns the process-wide `data/PanelBus` state and the same
     system actions. The overlay is a `TYPE_APPLICATION_OVERLAY` window that stays mounted
-    for the service's life; only its touchability tracks visibility (`FLAG_NOT_TOUCHABLE`
-    toggled via `updateViewLayout`), because re-adding a `ComposeView` breaks its
-    composition.
+    for the service's life; visibility and touchability track the shared state
+    (`View.GONE` + `FLAG_NOT_TOUCHABLE`), because re-adding a `ComposeView` breaks its
+    composition. While the launcher activity is started (`PanelBus.appForeground`) the
+    overlay is suppressed — the in-app panel already owns that screen, and two stacked
+    panels/scrims are never allowed. The boot receiver *arms* the service without
+    revealing the panel.
   - On API 34+ an overlay added from a **background** service is torn down silently, so
     the service is a **foreground service** with `FOREGROUND_SERVICE_SPECIAL_USE` and the
     `android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE` manifest property. `SYSTEM_ALERT_WINDOW`

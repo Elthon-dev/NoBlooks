@@ -44,6 +44,14 @@ object PanelBus {
     private val _overlayActive = MutableStateFlow(false)
     val overlayActive: StateFlow<Boolean> = _overlayActive.asStateFlow()
 
+    /**
+     * True while the launcher activity is started. The in-app panel already draws
+     * there, so the overlay stays mounted but hidden — otherwise a reveal would put
+     * two panels (and two scrims) on screen at once.
+     */
+    private val _appForeground = MutableStateFlow(false)
+    val appForeground: StateFlow<Boolean> = _appForeground.asStateFlow()
+
     /** Applies an event to the shared state. Actions are the caller's job. */
     fun dispatch(event: PanelEvent): PanelState {
         val next = _state.value.reduce(event)
@@ -69,6 +77,10 @@ object PanelBus {
 
     fun setOverlayActive(active: Boolean) {
         _overlayActive.value = active
+    }
+
+    fun setAppForeground(foreground: Boolean) {
+        _appForeground.value = foreground
     }
 
     /**

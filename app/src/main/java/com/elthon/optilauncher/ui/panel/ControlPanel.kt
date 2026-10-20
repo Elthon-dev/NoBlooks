@@ -82,7 +82,6 @@ import kotlinx.coroutines.delay
 fun ControlPanel(
     visible: Boolean,
     face: PanelFace,
-    armed: Boolean,
     recents: List<RecentApp>,
     habits: List<RecentApp>,
     notifications: List<PanelNotification>,
@@ -311,7 +310,7 @@ private fun PillStatusStrip() {
     ) {
         NbText(weekday, style = NbType.weekday, color = colors.onSurfaceDim)
         Spacer(Modifier.width(8.dp))
-        NbText(clock, style = NbType.clock, color = colors.onSurface)
+        NbText(clock, style = NbType.pillClock, color = colors.onSurface)
         Spacer(Modifier.weight(1f))
         if (status.charging) {
             NbText("CHG", style = NbType.mono, color = colors.accent)
@@ -396,15 +395,20 @@ private fun FaceHeader(
                 color = colors.onSurface
             )
         }
-        IconGlyph(
-            glyph = Glyph.CLOSE,
-            tint = colors.onSurface,
+        Box(
             modifier = Modifier
-                .size(34.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .size(48.dp)
+                .clip(RoundedCornerShape(16.dp))
                 .clickable(onClick = onCollapse),
-            contentDescription = "Back to pill"
-        )
+            contentAlignment = Alignment.Center
+        ) {
+            IconGlyph(
+                glyph = Glyph.CLOSE,
+                tint = colors.onSurface,
+                modifier = Modifier.size(22.dp),
+                contentDescription = "Back to pill"
+            )
+        }
     }
 }
 
@@ -489,15 +493,20 @@ private fun AppRow(
             }
         }
         if (onStop != null) {
-            IconGlyph(
-                Glyph.STOP,
-                colors.onSurfaceDim,
-                Modifier
-                    .size(30.dp)
-                    .clip(RoundedCornerShape(10.dp))
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(14.dp))
                     .clickable(onClick = onStop),
-                contentDescription = "Force stop $label"
-            )
+                contentAlignment = Alignment.Center
+            ) {
+                IconGlyph(
+                    Glyph.STOP,
+                    colors.onSurfaceDim,
+                    Modifier.size(22.dp),
+                    contentDescription = "Force stop $label"
+                )
+            }
         }
     }
 }

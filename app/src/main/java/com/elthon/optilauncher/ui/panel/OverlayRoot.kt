@@ -9,7 +9,6 @@ import androidx.compose.ui.platform.LocalContext
 import com.elthon.optilauncher.core.panel.PanelEvent
 import com.elthon.optilauncher.core.panel.PanelFace
 import com.elthon.optilauncher.core.theme.LauncherTheme
-import com.elthon.optilauncher.data.AccessibilityPanelService
 import com.elthon.optilauncher.data.NotificationBridge
 import com.elthon.optilauncher.data.OverlayPanelActions
 import com.elthon.optilauncher.data.PanelBus
@@ -49,7 +48,6 @@ fun OverlayRoot(actions: OverlayPanelActions) {
         ControlPanel(
             visible = panel.visible,
             face = panel.face,
-            armed = AccessibilityPanelService.isEnabled(context),
             recents = recents,
             habits = habits,
             notifications = notifications,

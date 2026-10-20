@@ -26,6 +26,7 @@ import com.elthon.optilauncher.R
 import com.elthon.optilauncher.core.panel.PanelEvent
 import com.elthon.optilauncher.core.panel.PanelFace
 import com.elthon.optilauncher.core.panel.RecentApp
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
@@ -55,6 +56,7 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
 
     override fun onDestroy() {
         hideOverlay()
+        if (::controller.isInitialized) controller.close()
         PanelBus.onOverlayStopped()
         store.clear()
         super.onDestroy()
@@ -75,11 +77,19 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
         // The window stays mounted for the service's whole life (re-adding a
         // ComposeView breaks its composition, per the platform behaviour). Its
         // touchability tracks panel visibility instead: hidden means touch-through.
+        //
+        // The launcher's own window already hosts the in-app panel, so while the
+        // activity is started the overlay must stay hidden — otherwise a reveal
+        // would stack two identical panels on top of each other.
         lifecycleScope.launch {
-            PanelBus.state.collect { state ->
-                if (overlayView == null && state.visible) showOverlay()
-                setTouchable(state.visible)
-                if (state.visible) {
+            kotlinx.coroutines.flow.combine(PanelBus.state, PanelBus.appForeground) { state, foreground ->
+                state to foreground
+            }.collect { (state, foreground) ->
+                val show = state.visible && !foreground
+                if (overlayView == null && show) showOverlay()
+                setTouchable(show)
+                setWindowVisible(show)
+                if (show) {
                     when (state.face) {
                         com.elthon.optilauncher.core.panel.PanelFace.RECENTS -> controller.refreshRecents()
                         com.elthon.optilauncher.core.panel.PanelFace.HABITS -> controller.refreshHabits()
@@ -100,6 +110,8 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
 
             ACTION_HIDE -> hideOverlay()
 
+            ACTION_ARM -> Unit
+
             ACTION_DISMISS_PANEL -> PanelBus.dispatch(PanelEvent.Hide)
         }
         // Keep running: the trigger must work from any app. ColorOS may still kill
@@ -108,6 +120,13 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
     }
 
     // ------------------------------------------------------------------ window
+
+    /** Shows or hides the mounted window without disturbing its composition. */
+    private fun setWindowVisible(visible: Boolean) {
+        val view = overlayView ?: return
+        val wanted = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+        if (view.visibility != wanted) view.visibility = wanted
+    }
 
     /** Toggles whether the overlay window accepts touches. */
     private fun setTouchable(touchable: Boolean) {
@@ -226,10 +245,20 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
 
         const val ACTION_SHOW = "com.elthon.optilauncher.overlay.SHOW"
         const val ACTION_HIDE = "com.elthon.optilauncher.overlay.HIDE"
+        const val ACTION_ARM = "com.elthon.optilauncher.overlay.ARM"
         const val ACTION_DISMISS_PANEL = "com.elthon.optilauncher.overlay.DISMISS_PANEL"
 
         fun show(context: Context) {
             start(context, ACTION_SHOW)
+        }
+
+        /**
+         * Starts the service without revealing anything. Used by the boot receiver:
+         * coming back from a reboot should restore the trigger, not throw a panel in
+         * the user's face before the launcher has even drawn.
+         */
+        fun arm(context: Context) {
+            start(context, ACTION_ARM)
         }
 
         fun hide(context: Context) {
@@ -254,9 +283,17 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
  */
 class OverlayPanelActions(private val context: Context) {
 
+    private val scope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+    )
     private val controller = PanelController(context)
     private val systemActions = SystemActions(context)
     private val recentsRepo = RecentsRepository(context)
+
+    /** Cancels in-flight list refreshes when the hosting service dies. */
+    fun close() {
+        scope.cancel()
+    }
 
     /** Applies an event to the bus and performs any system side effect it implies. */
     fun dispatch(event: PanelEvent) {
@@ -284,7 +321,7 @@ class OverlayPanelActions(private val context: Context) {
     }
 
     fun refreshRecents() {
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        scope.launch {
             val self = context.packageName
             val live = controller.liveRecentPackages()
             val list = recentsRepo.recents(selfPackage = self, livePackages = live)
@@ -299,7 +336,7 @@ class OverlayPanelActions(private val context: Context) {
      * shows the fully scored ranking; this is the overlay's honest approximation.
      */
     fun refreshHabits() {
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        scope.launch {
             val self = context.packageName
             val list = recentsRepo.recents(selfPackage = self)
             PanelBus.setHabits(list)
@@ -326,7 +363,7 @@ class OverlayPanelActions(private val context: Context) {
     }
 
     fun stopApp(app: RecentApp) {
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        scope.launch {
             if (!ShizukuBridge.available()) {
                 PanelBus.setStopVerdict(com.elthon.optilauncher.core.panel.StopVerdict.UNAVAILABLE)
                 return@launch
