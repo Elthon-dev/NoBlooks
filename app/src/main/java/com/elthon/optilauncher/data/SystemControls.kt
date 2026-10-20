@@ -59,23 +59,55 @@ class SystemControls(private val context: Context) {
             ControlKey.WIFI -> {
                 val on = shizukuRadioState(WifiProbe) == RadioState.ON
                 ShizukuBridge.exec("svc wifi ${if (on) "disable" else "enable"}")
-                // Give the service a beat to settle before re-reading.
-                kotlinx.coroutines.delay(350)
+                settle()
                 shizukuRadioState(WifiProbe)
             }
 
             ControlKey.CELLULAR -> {
                 val on = shizukuRadioState(DataProbe) == RadioState.ON
                 ShizukuBridge.exec("svc data ${if (on) "disable" else "enable"}")
-                kotlinx.coroutines.delay(350)
+                settle()
                 shizukuRadioState(DataProbe)
             }
 
-            // Bluetooth/airplane via shell are unreliable across vendors; let the
-            // caller open the real panel rather than lie about the result.
-            ControlKey.BLUETOOTH, ControlKey.AIRPLANE -> null
+            ControlKey.BLUETOOTH -> {
+                val wasOn = bluetoothState() == RadioState.ON
+                val want = if (wasOn) "disable" else "enable"
+                // `svc bluetooth` is the documented shell entry point; `cmd
+                // bluetooth_manager` covers the ROMs where the svc target is absent.
+                // Fire the primary, and only fall through when the state did not
+                // actually move, so we neither spam commands nor overstate success.
+                ShizukuBridge.exec("svc bluetooth $want")
+                settle()
+                if (bluetoothState() == RadioState.ON == wasOn) {
+                    ShizukuBridge.exec("cmd bluetooth_manager $want")
+                    settle()
+                }
+                bluetoothState()
+            }
+
+            ControlKey.AIRPLANE -> {
+                val wasOn = airplaneState() == RadioState.ON
+                val target = if (wasOn) 0 else 1
+                // Airplane mode is a global setting plus a system broadcast. The shell
+                // identity may flip the modern `cmd connectivity` switch; on older
+                // builds the global write + broadcast is what the framework reacts to.
+                ShizukuBridge.exec("cmd connectivity airplane-mode $target")
+                settle()
+                if (airplaneState() == RadioState.ON == wasOn) {
+                    ShizukuBridge.exec("settings put global airplane_mode_on $target")
+                    ShizukuBridge.exec(
+                        "am broadcast -a android.intent.action.AIRPLANE_MODE --ez state ${target == 1}"
+                    )
+                    settle()
+                }
+                airplaneState()
+            }
         }
     }
+
+    /** A beat for the framework to settle before the state is re-read. */
+    private suspend fun settle() = kotlinx.coroutines.delay(400)
 
     private suspend fun shizukuRadioState(probe: RadioProbe): RadioState {
         val global = ShizukuBridge.readGlobal(probe.globalKey)

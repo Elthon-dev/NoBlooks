@@ -89,6 +89,11 @@ fun HomeContent(
         // Whether the control centre is open. Owned here because it is an overlay
         // over the whole home screen, like the island, not part of either surface.
         var controlOpen by remember { mutableStateOf(false) }
+        // The real widget fades *under* the growing panel: a shared-element handoff,
+        // not two cards stacked. The overlay hands us a provider (derived from its
+        // morph value) which is read only inside the widget's draw lambda, so the
+        // handoff costs no recomposition.
+        var widgetAlphaProvider by remember { mutableStateOf<() -> Float>({ 1f }) }
         // With the status bar hidden, statusBars is 0 — but a camera cutout still
         // needs clearance, so the widget hugs whichever is taller.
         val topInsets = WindowInsets.statusBars
@@ -124,7 +129,8 @@ fun HomeContent(
                     .windowInsetsPadding(topInsets)
                     .padding(end = NbDim.ScreenInset, top = NbDim.WidgetTopInset)
                     .onSizeChanged { instrumentHeightPx = it.height }
-                    .onGloballyPositioned { widgetBounds = it.boundsInRoot() },
+                    .onGloballyPositioned { widgetBounds = it.boundsInRoot() }
+                    .graphicsLayer { alpha = widgetAlphaProvider() },
                 onClick = {
                     // Opening the control centre also drops the island back to its
                     // capsule: the two can never both be open.
@@ -284,6 +290,7 @@ fun HomeContent(
                 originWidth = bounds?.width ?: 0f,
                 originHeight = bounds?.height ?: 0f,
                 reducedMotion = reducedMotion,
+                onWidgetAlpha = { provider -> widgetAlphaProvider = provider },
                 onDismiss = { controlOpen = false }
             )
 

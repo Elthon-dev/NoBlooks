@@ -35,6 +35,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -89,6 +90,7 @@ fun ControlCenterOverlay(
     originWidth: Float,
     originHeight: Float,
     reducedMotion: Boolean,
+    onWidgetAlpha: ((() -> Float)) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -138,6 +140,21 @@ fun ControlCenterOverlay(
     // never animates toward a placeholder height.
     var showContent by remember { mutableStateOf(open) }
     var animateOpen by remember { mutableFloatStateOf(if (open) 1f else 0f) }
+
+    // The morph value. Held un-delegated on purpose: it is read in layout/draw and
+    // polled inside frame waits, never in composition.
+    val progressState = animateFloatAsState(
+        targetValue = animateOpen,
+        animationSpec = if (reducedMotion) {
+            spring(stiffness = Spring.StiffnessHigh)
+        } else if (open) {
+            NbMotion.enterSpring
+        } else {
+            NbMotion.exitSpring
+        },
+        label = "controlProgress"
+    )
+
     LaunchedEffect(open, reducedMotion) {
         if (reducedMotion) {
             showContent = open
@@ -156,27 +173,42 @@ fun ControlCenterOverlay(
             }
             animateOpen = 1f
         } else {
+            // Start the exit, then hold the panel mounted until the spring has
+            // genuinely settled. Unmounting one frame in (the old behaviour) meant
+            // the close never animated — it just snapped off the card.
             animateOpen = 0f
-            withFrameNanos { }
+            var guard = 0
+            while (progressState.value > 0.004f && guard < MAX_EXIT_FRAMES) {
+                withFrameNanos { }
+                guard++
+            }
             showContent = false
+        }
+    }
+
+    // The shared-element handoff. The widget's alpha is derived from the morph value
+    // and handed to the home screen as a *provider* (read only in its draw lambda),
+    // so this costs no recomposition anywhere:
+    //  - opening, the real widget hands its pixels to the panel over the first
+    //    fifth of the stretch, so there is never a beat with two cards stacked;
+    //  - closing, it takes them back over the last fifth, so the widget is solid
+    //    exactly when the panel lands back on its bounds.
+    // Registered before the early return so the provider stays valid across the
+    // unmount at the end of the close.
+    val openNow by rememberUpdatedState(open)
+    LaunchedEffect(progressState, openNow) {
+        // A provider, not a value: the home screen reads it inside the widget's draw
+        // lambda, off composition entirely.
+        onWidgetAlpha {
+            val p = progressState.value.coerceIn(0f, 1f)
+            val target = if (openNow) (1f - p / WIDGET_HANDOFF) else ((1f - p) / WIDGET_HANDOFF)
+            target.coerceIn(0f, 1f)
         }
     }
 
     if (!showContent) return
 
     BackHandler(enabled = open) { onDismiss() }
-
-    val progress by animateFloatAsState(
-        targetValue = animateOpen,
-        animationSpec = if (reducedMotion) {
-            spring(stiffness = Spring.StiffnessHigh)
-        } else if (open) {
-            NbMotion.enterSpring
-        } else {
-            NbMotion.exitSpring
-        },
-        label = "controlProgress"
-    )
 
     BoxWithConstraints(modifier.fillMaxSize()) {
         val screenWidthPx = with(density) { maxWidth.toPx() }
@@ -209,7 +241,7 @@ fun ControlCenterOverlay(
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = progress }
+                .graphicsLayer { alpha = progressState.value.coerceIn(0f, 1f) }
                 .background(colors.scrim)
                 .pointerInput(Unit) { detectTapGestures { onDismiss() } }
         )
@@ -217,14 +249,21 @@ fun ControlCenterOverlay(
         Box(
             modifier = Modifier
                 .layout { measurable, constraints ->
-                    val p = progress.coerceIn(0f, 1f)
-                    val w = lerp(originWidth, targetWidthPx, p).roundToInt().coerceAtLeast(1)
-                    val h = lerp(originHeight, targetHeightPx, p).roundToInt().coerceAtLeast(1)
+                    val p = progressState.value.coerceIn(0f, 1f)
+                    // Split the single morph value into two axes so the card unfurls
+                    // instead of scaling: the height leads (the widget stretches
+                    // downward first), the width trails a touch (it then settles out
+                    // to the panel's column). Pure functions of p — no extra
+                    // animation, so nothing here can desync from the spring.
+                    val ph = easeLead(p)
+                    val pw = easeTrail(p)
+                    val w = lerp(originWidth, targetWidthPx, pw).roundToInt().coerceAtLeast(1)
+                    val h = lerp(originHeight, targetHeightPx, ph).roundToInt().coerceAtLeast(1)
                     // Keep it on-screen for *every* frame of the morph, not just at
                     // the ends: interpolate the clamped home, then clamp again.
-                    val x = lerp(originX, targetX, p).roundToInt()
+                    val x = lerp(originX, targetX, pw).roundToInt()
                         .coerceIn(0, (screenWidthPx - w).roundToInt().coerceAtLeast(0))
-                    val y = lerp(originY, targetY, p).roundToInt()
+                    val y = lerp(originY, targetY, ph).roundToInt()
                         .coerceIn(0, (screenHeightPx - h).roundToInt().coerceAtLeast(0))
                     // Measure the content at the animated width but unconstrained
                     // height so its natural height is known on the first pass; then
@@ -241,7 +280,7 @@ fun ControlCenterOverlay(
                     layout(w, h) { placeable.placeRelative(x, y) }
                 }
                 .graphicsLayer {
-                    val p = progress.coerceIn(0f, 1f)
+                    val p = progressState.value.coerceIn(0f, 1f)
                     val corner = lerp(
                         with(density) { NbDim.WidgetCorner.toPx() },
                         with(density) { NbDim.PanelCornerTop.toPx() },
@@ -272,7 +311,7 @@ fun ControlCenterOverlay(
                 snapshot = snapshot,
                 // Read the animation in the draw phase, never in composition: the
                 // content fades from ~35% progress but must not recompose per frame.
-                progress = { progress },
+                progress = { progressState.value },
                 onTile = { key ->
                     scope.launch {
                         // A radio we can toggle: do it for real. Otherwise open the
@@ -351,7 +390,7 @@ private fun ControlContent(
         Spacer(Modifier.height(14.dp))
         if (snapshot.elevated) {
             NbText(
-                text = "Elevated via Shizuku — Wi-Fi and mobile data toggle here.",
+                text = "Elevated via Shizuku — these tiles flip the radios for real.",
                 style = NbType.bodySmall,
                 color = colors.onSurfaceDim
             )
@@ -428,8 +467,35 @@ private fun stateLabel(state: RadioState): String = when (state) {
 private fun lerp(start: Float, stop: Float, fraction: Float): Float =
     start + (stop - start) * fraction
 
+/**
+ * The two halves of the "unfurl". Both are pure functions of the one morph value, so
+ * they can never desync from the spring. [easeLead] runs ahead of identity (the
+ * panel's height is most of the way home early), [easeTrail] runs behind it (the
+ * width settles a beat later). The gap between them is what makes the card read as
+ * stretching into the panel rather than a rectangle simply scaling up: the shape is
+ * briefly taller-and-narrower than either of its ends, which is exactly what a card
+ * being pulled open looks like.
+ */
+private fun easeLead(p: Float): Float = 1f - (1f - p).let { it * it * it * it }
+
+private fun easeTrail(p: Float): Float = p * p
+
 /** Safety cap on frames spent waiting for the first content measurement. */
 private const val MAX_MEASURE_FRAMES = 8
+
+/**
+ * Safety cap on frames spent waiting for the exit spring to settle before the panel
+ * unmounts. ~0.8s at 60fps: far past any real exit, but it guarantees the panel can
+ * never be left mounted forever if a frame is dropped.
+ */
+private const val MAX_EXIT_FRAMES = 48
+
+/**
+ * Fraction of the morph over which the real widget and the panel trade pixels. Small
+ * enough that you never see both at once, long enough to read as one card becoming
+ * another rather than a cut.
+ */
+private const val WIDGET_HANDOFF = 0.22f
 
 /**
  * The opt-in path: if Shizuku is running, ask it directly (its own dialog handles

@@ -91,10 +91,21 @@ called out as **unverified** rather than claimed as working.
   (`Settings.Panel.ACTION_WIFI` / `ACTION_INTERNET_CONNECTIVITY`,
   `ACTION_BLUETOOTH_SETTINGS`, `ACTION_AIRPLANE_MODE_SETTINGS`). The footer says so.
 - **Shizuku is optional and opt-in** (`data/ShizukuBridge.kt`): only when it is running
-  and granted do Wi-Fi and mobile data become *real, distinguishable* toggles, via
-  `svc wifi enable/disable` and `svc data enable/disable` with per-radio state reads.
-  Nothing is requested at startup; it is asked for from the control centre only. When
-  Shizuku is absent every path degrades to the read-only tiles — never a fake switch.
+  and granted do the tiles become *real* toggles — Wi-Fi (`svc wifi`), mobile data
+  (`svc data`), Bluetooth (`svc bluetooth` + `cmd bluetooth_manager`) and airplane mode
+  (`cmd connectivity airplane-mode` + the global write/broadcast). Shizuku 13.1 removed
+  `newProcess`, so commands run through a bound AIDL `ShellUserService`
+  (`app/src/main/aidl/.../IShellService.aidl`) — keep both ends off R8. Nothing is
+  requested at startup; it is asked for from the control centre only. When Shizuku is
+  absent every path degrades to the read-only tiles — never a fake switch.
+- The **morph is the widget becoming the panel**, and it is symmetrical: the real
+  widget's alpha is handed to the panel over the first fifth of the open and taken
+  back over the last fifth of the close (a shared-element handoff, read only in the
+  widget's draw lambda), so you never see two cards stacked. Height and width use
+  separate, pure functions of the single spring value so the card *unfurls* rather
+  than scales. The close is a real animation: the panel stays mounted and frame-polls
+  the exit spring until it settles (`MAX_EXIT_FRAMES` guard) instead of unmounting a
+  frame in.
 - The **suggestion** is a small solid card (icon + app name + reason), tap to launch.
   It must never render a package name: if the predicted package has no known app entry
   the card is skipped, and `HabitEngine.recommend` restricts candidates to known
