@@ -1,6 +1,10 @@
 package com.elthon.optilauncher.ui.control
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -19,11 +23,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -46,15 +53,18 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.elthon.optilauncher.data.ControlKey
 import com.elthon.optilauncher.data.RadioState
+import com.elthon.optilauncher.data.ShizukuBridge
 import com.elthon.optilauncher.data.SystemControls
 import com.elthon.optilauncher.data.SystemControlSnapshot
 import com.elthon.optilauncher.ui.components.Glyph
 import com.elthon.optilauncher.ui.components.IconGlyph
+import com.elthon.optilauncher.ui.components.MonoButton
 import com.elthon.optilauncher.ui.components.NbText
 import com.elthon.optilauncher.ui.theme.LocalNbColors
 import com.elthon.optilauncher.ui.theme.NbDim
 import com.elthon.optilauncher.ui.theme.NbMotion
 import com.elthon.optilauncher.ui.theme.NbType
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
@@ -86,16 +96,46 @@ fun ControlCenterOverlay(
     val context = LocalContext.current
     val density = LocalDensity.current
     val controls = remember(context) { SystemControls(context) }
+    val scope = rememberCoroutineScope()
 
     // Live state, refreshed every time the panel opens. Reading it on open (not on
     // every frame) keeps the radio probes off the animation path.
-    var snapshot by remember { mutableStateOf(SystemControlSnapshot(RadioState.UNKNOWN, RadioState.UNKNOWN, RadioState.UNKNOWN, RadioState.UNKNOWN)) }
-    LaunchedEffect(open) {
-        if (open) snapshot = controls.snapshot()
+    var snapshot by remember {
+        mutableStateOf(
+            SystemControlSnapshot(
+                RadioState.UNKNOWN, RadioState.UNKNOWN, RadioState.UNKNOWN, RadioState.UNKNOWN
+            )
+        )
+    }
+    // Bumped after a toggle so the snapshot re-reads; also the trigger for the
+    // open-time read.
+    var refreshTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(open, refreshTick) {
+        if (open || refreshTick > 0) snapshot = controls.snapshot()
     }
 
-    // Mount, then move: the tiles compose one frame before the spring starts, so
-    // the open path never pays a first-layout cost mid-morph.
+    // Shizuku is opt-in and asked for only from the panel that uses it.
+    DisposableEffect(Unit) {
+        ShizukuBridge.registerListener()
+        onDispose { ShizukuBridge.unregisterListener() }
+    }
+    val shizukuPrompt = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        // Returning from Shizuku's manager: re-read; if the grant landed, the tiles
+        // become real switches.
+        refreshTick++
+    }
+
+    // The tiles' natural height, measured during layout. Held here (not inside the
+    // BoxWithConstraints) so the open effect can wait for a real measurement before
+    // it starts the spring — otherwise the first animated frame would target the
+    // 120dp floor and the panel would visibly jump as the true height arrived.
+    var contentHeightPx by remember { mutableIntStateOf(0) }
+
+    // Mount, then move: the tiles compose one frame *and* are measured before the
+    // spring starts, so the open path never pays a first-layout cost mid-morph and
+    // never animates toward a placeholder height.
     var showContent by remember { mutableStateOf(open) }
     var animateOpen by remember { mutableFloatStateOf(if (open) 1f else 0f) }
     LaunchedEffect(open, reducedMotion) {
@@ -107,6 +147,13 @@ fun ControlCenterOverlay(
         if (open) {
             showContent = true
             withFrameNanos { }
+            // Wait (bounded) for the first measured height so the spring has a real
+            // target from its very first tick.
+            var waited = 0
+            while (contentHeightPx <= 0 && waited < MAX_MEASURE_FRAMES) {
+                withFrameNanos { }
+                waited++
+            }
             animateOpen = 1f
         } else {
             animateOpen = 0f
@@ -146,8 +193,6 @@ fun ControlCenterOverlay(
         // Fit the content: the tiles compose at their natural size and the panel
         // adopts exactly that height (clamped so it never runs off the screen).
         // Measured once per content change, not per frame.
-        var contentHeightPx by remember { mutableIntStateOf(0) }
-
         val targetWidthPx = with(density) {
             (maxWidth - NbDim.ControlMargin * 2f).coerceAtMost(360.dp).toPx()
         }
@@ -228,7 +273,20 @@ fun ControlCenterOverlay(
                 // Read the animation in the draw phase, never in composition: the
                 // content fades from ~35% progress but must not recompose per frame.
                 progress = { progress },
-                onTile = { key -> controls.openPanel(key) }
+                onTile = { key ->
+                    scope.launch {
+                        // A radio we can toggle: do it for real. Otherwise open the
+                        // platform panel; if that is unavailable and Shizuku could
+                        // help, offer to enable it first.
+                        val toggled = controls.toggle(key)
+                        if (toggled != null) {
+                            refreshTick++
+                        } else if (!controls.openPanel(key) && !ShizukuBridge.available()) {
+                            requestShizuku(shizukuPrompt)
+                        }
+                    }
+                },
+                onEnableElevated = { requestShizuku(shizukuPrompt) }
             )
         }
     }
@@ -238,7 +296,8 @@ fun ControlCenterOverlay(
 private fun ControlContent(
     snapshot: SystemControlSnapshot,
     progress: () -> Float,
-    onTile: (ControlKey) -> Unit
+    onTile: (ControlKey) -> Unit,
+    onEnableElevated: () -> Unit
 ) {
     val colors = LocalNbColors.current
     Column(
@@ -290,11 +349,28 @@ private fun ControlContent(
             )
         }
         Spacer(Modifier.height(14.dp))
-        NbText(
-            text = "Tiles open Android's own switches.",
-            style = NbType.bodySmall,
-            color = colors.onSurfaceDim
-        )
+        if (snapshot.elevated) {
+            NbText(
+                text = "Elevated via Shizuku — Wi-Fi and mobile data toggle here.",
+                style = NbType.bodySmall,
+                color = colors.onSurfaceDim
+            )
+        } else {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                NbText(
+                    text = "Tiles open Android's own switches.",
+                    style = NbType.bodySmall,
+                    color = colors.onSurfaceDim,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(10.dp))
+                MonoButton("Enable control", onClick = onEnableElevated, primary = true)
+            }
+        }
     }
 }
 
@@ -351,3 +427,39 @@ private fun stateLabel(state: RadioState): String = when (state) {
 
 private fun lerp(start: Float, stop: Float, fraction: Float): Float =
     start + (stop - start) * fraction
+
+/** Safety cap on frames spent waiting for the first content measurement. */
+private const val MAX_MEASURE_FRAMES = 8
+
+/**
+ * The opt-in path: if Shizuku is running, ask it directly (its own dialog handles
+ * the grant); otherwise send the user to the Shizuku manager so they can start it
+ * or install it. `shizukuPrompt` is the launcher used for the manager intent, so
+ * we re-read state when the user comes back.
+ */
+private fun requestShizuku(
+    prompt: androidx.activity.result.ActivityResultLauncher<Intent>
+) {
+    if (ShizukuBridge.needsPermission()) {
+        // Shizuku is alive: ask it for the permission in-place.
+        ShizukuBridge.requestPermission { /* re-read happens on resume */ }
+        return
+    }
+    val intent = Intent(Intent.ACTION_MAIN).apply {
+        setClassName("moe.shizuku.privileged.api", "moe.shizuku.manager.MainActivity")
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        prompt.launch(intent)
+    } catch (_: Throwable) {
+        // Manager not installed: offer the store page instead.
+        try {
+            prompt.launch(
+                Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (_: Throwable) {
+            // Nothing we can do; the tiles stay read-only.
+        }
+    }
+}

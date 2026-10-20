@@ -90,6 +90,11 @@ called out as **unverified** rather than claimed as working.
   `AIRPLANE_MODE_ON`, `bluetooth_on`) and opens the platform's own panel
   (`Settings.Panel.ACTION_WIFI` / `ACTION_INTERNET_CONNECTIVITY`,
   `ACTION_BLUETOOTH_SETTINGS`, `ACTION_AIRPLANE_MODE_SETTINGS`). The footer says so.
+- **Shizuku is optional and opt-in** (`data/ShizukuBridge.kt`): only when it is running
+  and granted do Wi-Fi and mobile data become *real, distinguishable* toggles, via
+  `svc wifi enable/disable` and `svc data enable/disable` with per-radio state reads.
+  Nothing is requested at startup; it is asked for from the control centre only. When
+  Shizuku is absent every path degrades to the read-only tiles — never a fake switch.
 - The **suggestion** is a small solid card (icon + app name + reason), tap to launch.
   It must never render a package name: if the predicted package has no known app entry
   the card is skipped, and `HabitEngine.recommend` restricts candidates to known
