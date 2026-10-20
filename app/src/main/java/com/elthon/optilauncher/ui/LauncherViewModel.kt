@@ -238,12 +238,13 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             var sinceCommit = 0
             for (entry in order.values) {
                 // Reuse anything already rendered for this treatment/tint.
-                iconRenderer.cached(entry.packageName, treatment, tint)?.let {
-                    filled[entry.packageName] = it
-                    continue
-                }
-                val bitmap = withContext(Dispatchers.Default) {
-                    iconRenderer.render(entry.packageName, treatment, tint)
+                val cached = iconRenderer.cached(entry.packageName, treatment, tint)
+                val bitmap = if (cached != null) {
+                    cached
+                } else {
+                    withContext(Dispatchers.Default) {
+                        iconRenderer.render(entry.packageName, treatment, tint)
+                    }
                 }
                 if (bitmap != null) filled[entry.packageName] = bitmap
                 // Commit every 12 icons rather than once at the end, so the first
