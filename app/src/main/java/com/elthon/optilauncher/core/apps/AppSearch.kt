@@ -66,7 +66,7 @@ object AppSearch {
         val scored = ArrayList<ScoredApp>(apps.size)
         for (app in apps) {
             val label = normalize(app.label)
-            val tier = tierOf(label, tokens, flat, app.packageName) ?: continue
+            val tier = tierOf(label, tokens, flat, query, app.packageName) ?: continue
             scored.add(ScoredApp(app, tier, priority[app.packageName] ?: Int.MAX_VALUE, label))
         }
         scored.sortWith(
@@ -105,18 +105,26 @@ object AppSearch {
                 .thenBy { app -> app.packageName }
         )
 
-    private fun tierOf(label: String, tokens: List<String>, query: String, rawPackage: String): Int? {
+    private fun tierOf(
+        label: String,
+        tokens: List<String>,
+        flat: String,
+        raw: String,
+        rawPackage: String
+    ): Int? {
         val words = label.split(*SEPARATORS).filter { it.isNotEmpty() }
         val pkg = normalize(rawPackage)
         return when {
-            label == query -> 0
-            label.startsWith(query) -> 1
-            words.any { it.startsWith(query) } -> 2
-            words.size > 1 && initials(words).startsWith(query) -> 3
+            label == flat -> 0
+            label.startsWith(flat) -> 1
+            words.any { it.startsWith(flat) } -> 2
+            words.size > 1 && initials(words).startsWith(flat) -> 3
             tokens.size > 1 && tokens.all { token -> words.any { it.startsWith(token) } } -> 4
-            label.contains(query) -> 5
-            pkg.startsWith(query) -> 6
-            pkg.contains(query) -> 7
+            label.contains(flat) -> 5
+            // Package ids keep their dots, so "android.camera" must not be forced
+            // through the word-splitting that the canonical form uses.
+            pkg.startsWith(flat) || pkg.startsWith(raw) -> 6
+            pkg.contains(flat) || pkg.contains(raw) -> 7
             else -> null
         }
     }

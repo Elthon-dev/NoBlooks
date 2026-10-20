@@ -85,11 +85,26 @@ class AppSearchTest {
     }
 
     @Test
+    fun `a label prefix outranks word initials`() {
+        // "gmail" starts with "gm" (tier 1); "Google Maps" only matches on initials
+        // (tier 3). Prefix wins, but both are found.
+        assertEquals(
+            listOf("Gmail", "Google Maps"),
+            AppSearch.filter(rich, "gm").map { it.label }
+        )
+    }
+
+    @Test
     fun `word initials outrank an incidental substring`() {
-        val result = AppSearch.filter(rich, "gm")
-        // "Gmail" contains "gm" (tier 5); the initials match (tier 3) wins.
-        assertEquals("Google Maps", result.first().label)
-        assertTrue(result.map { it.label }.contains("Gmail"))
+        val initialsApps = listOf(
+            AppRef("com.google.maps", "Google Maps", "com.google.maps/.Main"),
+            AppRef("com.logmein", "LogMeIn", "com.logmein/.Main")
+        )
+        // "gm" is Google Maps' initials (tier 3) and only a substring of LogMeIn (5).
+        assertEquals(
+            listOf("Google Maps", "LogMeIn"),
+            AppSearch.filter(initialsApps, "gm").map { it.label }
+        )
     }
 
     @Test
