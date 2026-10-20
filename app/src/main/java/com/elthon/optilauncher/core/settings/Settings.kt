@@ -30,7 +30,7 @@ class InMemoryKeyValueStore(initial: Map<String, String> = emptyMap()) : KeyValu
 enum class IconTreatment { ORIGINAL, GRAYSCALE, MONO }
 
 data class SettingsState(
-    val themeMode: ThemeMode = ThemeMode.AUTO,
+    val themeMode: ThemeMode = ThemeMode.DARK,
     val iconTreatment: IconTreatment = IconTreatment.GRAYSCALE,
     val reducedMotion: Boolean = false,
     val suggestionsEnabled: Boolean = true,

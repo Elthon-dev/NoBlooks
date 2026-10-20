@@ -13,20 +13,28 @@ import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
@@ -51,6 +59,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -123,6 +132,7 @@ import kotlin.math.roundToInt
  *  - the stage itself has no pointer handling, so taps fall through to the scrim;
  *  - Back collapses the island before anything else happens.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FloatingIsland(
     state: IslandState,
@@ -239,6 +249,15 @@ fun FloatingIsland(
                 modifier = Modifier.align(Alignment.TopStart)
             )
 
+            // --- keyboard-side actions -------------------------------------
+            // Own composable so watching the IME does not recompose the island.
+            KeyboardActions(
+                expanded = state.isExpanded,
+                onClear = { onEvent(IslandEvent.QueryChanged("")) },
+                onHide = { keyboard?.hide() },
+                modifier = Modifier.align(Alignment.BottomEnd)
+            )
+
             // Feedback sits on its own anchor at the bottom of the screen so a
             // launch note can never shift the island that produced it.
             TransientMessage(
@@ -308,7 +327,10 @@ private fun IslandBody(
     // The expanded panel has a fixed home: under the instrument on phones, level
     // with it on wide screens, and never lower than the bottom breathing room
     // allows. Its height is therefore the only figure that varies with content.
-    val statusBarPx = WindowInsets.statusBars.getTop(density).toFloat()
+    // Hiding the status bar zeroes statusBars, but a camera cutout still needs
+    // clearance; the taller of the two wins.
+    val cutoutPx = WindowInsets.displayCutout.getTop(density).toFloat()
+    val statusBarPx = max(WindowInsets.statusBars.getTop(density).toFloat(), cutoutPx)
     val navBarPx = WindowInsets.navigationBars.getBottom(density).toFloat()
     // The IME is a real bottom edge for the panel: while searching, the grid has to
     // end above the keyboard instead of continuing underneath it, or half the list
@@ -344,7 +366,11 @@ private fun IslandBody(
 
         // Bottom of the usable area: above the keyboard when it is up, above the
         // gesture bar when it is not.
-        val usableBottomPx = screenHeightPx - max(navBarPx, imePx)
+        // Leave room under the panel for the keyboard-side action row (46dp button
+        // + 12dp bottom padding) so it never covers the last result.
+        val keyboardActionPx = with(density) { 58.dp.toPx() }
+        val usableBottomPx = screenHeightPx - max(navBarPx, imePx) -
+            if (imePx > 0f) keyboardActionPx else 0f
         val bottomRoom = usableBottomPx - panelTopPx - with(density) { 24.dp.toPx() }
         val minPanelPx = with(density) { 220.dp.toPx() }
         val maxPanelPx = bottomRoom.coerceAtLeast(minPanelPx)
@@ -711,6 +737,61 @@ private fun PillGlyph(
         contentAlignment = Alignment.Center
     ) {
         IconGlyph(glyph, tint, Modifier.size(NbDim.PillIcon))
+    }
+}
+
+/**
+ * The two controls that live above the keyboard while searching: clear the query
+ * and put the keyboard away. They arrive and leave with the IME, ride its inset,
+ * and stay right-aligned with the launcher's single screen inset.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun KeyboardActions(
+    expanded: Boolean,
+    onClear: () -> Unit,
+    onHide: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val imeVisible = WindowInsets.isImeVisible
+    AnimatedVisibility(
+        visible = imeVisible && expanded,
+        enter = fadeIn(tween(NbMotion.Short4)) +
+            scaleIn(initialScale = 0.92f, animationSpec = tween(NbMotion.Short4)),
+        exit = fadeOut(tween(NbMotion.Short4)) +
+            scaleOut(targetScale = 0.92f, animationSpec = tween(NbMotion.Short4)),
+        modifier = modifier.padding(end = NbDim.ScreenInset, bottom = 12.dp)
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            KeyboardAction(Glyph.CLOSE, "Clear search", onClear)
+            KeyboardAction(Glyph.KEYBOARD, "Hide keyboard", onHide)
+        }
+    }
+}
+
+/**
+ * A small, solid circular action shown above the keyboard. The shadow does the
+ * separating, in keeping with the rest of the launcher's borderless surfaces.
+ */
+@Composable
+private fun KeyboardAction(glyph: Glyph, description: String, onClick: () -> Unit) {
+    val colors = LocalNbColors.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Box(
+        modifier = Modifier
+            .size(46.dp)
+            .shadow(elevation = if (pressed) 4.dp else 12.dp, shape = CircleShape)
+            .background(colors.surfaceSolid, CircleShape)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick
+            )
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center
+    ) {
+        IconGlyph(glyph, colors.onSurface, Modifier.size(20.dp))
     }
 }
 

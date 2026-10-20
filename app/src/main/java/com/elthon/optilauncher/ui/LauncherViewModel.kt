@@ -3,6 +3,7 @@ package com.elthon.optilauncher.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.ImageBitmap
 import com.elthon.optilauncher.core.apps.AppRef
 import com.elthon.optilauncher.core.habits.HabitEngine
@@ -46,7 +47,11 @@ import kotlinx.coroutines.withContext
  * Deliberately one object: the island, the theme and the habit data change from
  * different sources (wallpaper listener, package broadcasts, usage stats), and a
  * single snapshot keeps the UI consistent instead of letting them disagree.
+ *
+ * Told to Compose explicitly: every field is a snapshot value or an immutable
+ * collection, so composables that receive it can skip instead of re-running.
  */
+@Immutable
 data class LauncherUiState(
     val island: IslandState = IslandState(),
     val theme: LauncherTheme = LauncherTheme.fallback(),
@@ -126,8 +131,14 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
         refreshApps()
         appRepo.startWatching { refreshApps(force = true) }
-        refreshHabits()
         refreshHomeRole()
+        // Habit stats are a second, slower source (UsageStatsManager over a week via
+        // binder). Let the app list — the thing the first search needs — finish
+        // uncontended; the suggestion caption can arrive a beat later.
+        viewModelScope.launch {
+            delay(400)
+            refreshHabits()
+        }
     }
 
     override fun onCleared() {

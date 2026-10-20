@@ -12,7 +12,7 @@ class SettingsCodecTest {
     @Test
     fun `missing settings produce documented defaults`() {
         val state = SettingsCodec.decode(null)
-        assertEquals(ThemeMode.AUTO, state.themeMode)
+        assertEquals(ThemeMode.DARK, state.themeMode)
         assertEquals(IconTreatment.GRAYSCALE, state.iconTreatment)
         assertFalse(state.reducedMotion)
         assertTrue(state.suggestionsEnabled)
@@ -41,7 +41,7 @@ class SettingsCodecTest {
     @Test
     fun `unknown enum values fall back instead of crashing`() {
         val state = SettingsCodec.decode("v=1|mode=SIDEWAYS|icons=PINK|page=NOPE")
-        assertEquals(ThemeMode.AUTO, state.themeMode)
+        assertEquals(ThemeMode.DARK, state.themeMode)
         assertEquals(IconTreatment.GRAYSCALE, state.iconTreatment)
         assertEquals(IslandPage.APPS, state.lastPage)
     }

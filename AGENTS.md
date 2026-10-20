@@ -48,7 +48,16 @@ called out as **unverified** rather than claimed as working.
   **fixed anchor**: directly under the measured instrument on phones, level with its top
   edge on wide screens (≥680dp). The instrument reports its height so font-scale changes
   cannot cause a collision. The panel's bottom is clamped to the IME while the keyboard
-  is up, so the app grid never continues underneath it.
+  is up, so the app grid never continues underneath it, with 58dp reserved for the
+  keyboard action row.
+- The launcher is **dark by default** (`SettingsState.themeMode = DARK`); `AUTO` is
+  still available and follows measured wallpaper luminance.
+- The home screen **hides the status bar** (transient bars by swipe from the top). Top
+  clearance is therefore `max(statusBars, displayCutout)` — hiding the bar must never
+  put the instrument under a camera cutout.
+- While the IME is up, a right-aligned action row sits above it: clear-query, then
+  hide-keyboard, 10dp apart and `NbDim.ScreenInset` from the edge. It is its own
+  composable so watching the IME cannot recompose the island.
 - Apps page is **habit-first**: with no query it shows usage-ranked habits plus pinned
   favourites (falling back to the full list only when there is no history); typing
   switches the grid to search over every app, pinned apps included, with no result cap.

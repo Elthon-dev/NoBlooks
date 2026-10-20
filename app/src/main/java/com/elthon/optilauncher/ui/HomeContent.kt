@@ -8,7 +8,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -67,6 +73,11 @@ fun HomeContent(
         // Measured, not assumed: the panel's fixed top anchor is derived from the
         // instrument's real height, so font-scale changes cannot cause a collision.
         var instrumentHeightPx by remember { mutableIntStateOf(0) }
+        // With the status bar hidden, statusBars is 0 — but a camera cutout still
+        // needs clearance, so the widget hugs whichever is taller.
+        val topInsets = WindowInsets.statusBars
+            .union(WindowInsets.displayCutout)
+            .only(WindowInsetsSides.Top)
 
         Box(Modifier.fillMaxSize()) {
             // --- instrument widget over the wallpaper ----------------------
@@ -75,7 +86,7 @@ fun HomeContent(
             GlanceWidget(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .statusBarsPadding()
+                    .windowInsetsPadding(topInsets)
                     .padding(end = NbDim.ScreenInset, top = NbDim.WidgetTopInset)
                     .onSizeChanged { instrumentHeightPx = it.height },
                 onClick = {

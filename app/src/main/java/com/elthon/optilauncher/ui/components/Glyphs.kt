@@ -21,7 +21,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /** Icon vocabulary for the launcher — hand-drawn, monochrome, no icon library. */
-enum class Glyph { SEARCH, MIC, MIC_OFF, GRID, CHART, IMAGE, SLIDERS, CLOSE, PIN, CHECK, CHEVRON, SPLIT, WINDOW, REFRESH, TRASH, INFO, OPEN, HOME, DOT }
+enum class Glyph { SEARCH, MIC, MIC_OFF, GRID, CHART, IMAGE, SLIDERS, CLOSE, PIN, CHECK, CHEVRON, SPLIT, WINDOW, REFRESH, TRASH, INFO, OPEN, HOME, DOT, KEYBOARD }
 
 @Composable
 fun IconGlyph(
@@ -416,6 +416,31 @@ fun IconGlyph(
                     tint,
                     start = Offset(px(0.42f), px(0.60f)),
                     end = Offset(px(0.58f), px(0.60f)),
+                    strokeWidth = sw,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            Glyph.KEYBOARD -> {
+                val rect = Rect(px(0.02f), px(0.24f), px(0.98f), px(0.76f))
+                drawRoundRect(
+                    color = tint,
+                    topLeft = rect.topLeft,
+                    size = rect.size,
+                    cornerRadius = CornerRadius(s * 0.10f),
+                    style = stroke
+                )
+                for (row in 0 until 2) {
+                    val y = px(0.38f) + row * (px(0.50f) - px(0.38f))
+                    for (col in 0 until 3) {
+                        val x = px(0.30f) + col * (px(0.70f) - px(0.30f)) / 2f
+                        drawCircle(tint, s * 0.024f, Offset(x, y))
+                    }
+                }
+                drawLine(
+                    tint,
+                    start = Offset(px(0.36f), px(0.65f)),
+                    end = Offset(px(0.64f), px(0.65f)),
                     strokeWidth = sw,
                     cap = StrokeCap.Round
                 )

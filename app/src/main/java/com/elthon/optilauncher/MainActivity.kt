@@ -9,6 +9,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.addCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -47,6 +50,8 @@ class MainActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
         window.setBackgroundDrawableResource(android.R.color.transparent)
 
+        hideStatusBar()
+
         systemReducedMotion = animationsDisabled()
         registerAnimatorScaleObserver()
 
@@ -75,11 +80,31 @@ class MainActivity : ComponentActivity() {
         viewModel.refreshHomeRole()
         viewModel.recheckUsageAccess()
         systemReducedMotion = animationsDisabled()
+        hideStatusBar()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // Some system UI transitions restore the status bar; the launcher's chrome
+        // is the wallpaper, so put it away again whenever we get focus back.
+        if (hasFocus) hideStatusBar()
     }
 
     override fun onDestroy() {
         contentResolver.unregisterContentObserver(animatorScaleObserver)
         super.onDestroy()
+    }
+
+    /**
+     * The home screen owns the whole display: no status bar, no clock, no icons.
+     * Transient bars stay reachable by swiping from the top, and the navigation
+     * bar is left to the system (gesture pill / buttons) so the user can leave.
+     */
+    private fun hideStatusBar() {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.statusBars())
     }
 
     private fun registerAnimatorScaleObserver() {
