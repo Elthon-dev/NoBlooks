@@ -52,7 +52,7 @@ class SystemActions(private val context: Context) {
         return try {
             val intent = Intent.makeMainSelectorActivity(
                 Intent.ACTION_MAIN,
-                Intent.CATEGORY_APP_RECENTS
+                CATEGORY_APP_RECENTS
             ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
             true
@@ -107,5 +107,11 @@ class SystemActions(private val context: Context) {
     companion object {
         private const val TAG = "SystemActions"
         private const val SELF_ACTIVITY = "com.elthon.optilauncher.MainActivity"
+
+        /**
+         * `Intent.CATEGORY_APP_RECENTS`, spelled out. The constant exists but not
+         * every SDK/tooling combination resolves it, and the value is stable.
+         */
+        private const val CATEGORY_APP_RECENTS = "android.intent.category.APP_RECENTS"
     }
 }

@@ -87,8 +87,17 @@ class AppNotificationListener : NotificationListenerService() {
  * understands. Returns null for anything the panel cannot act on.
  */
 internal fun StatusBarNotification.toPanelNotification(): PanelNotification? = try {
+    buildPanelNotification()
+} catch (t: Throwable) {
+    Log.w("AppNotificationListener", "skip notification: ${t.javaClass.simpleName}")
+    null
+}
+
+private fun StatusBarNotification.buildPanelNotification(): PanelNotification? {
     val n = notification ?: return null
     val extras = n.extras ?: return null
+    val key = key ?: return null
+    val pkg = packageName ?: return null
 
     val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
     val body = extraText(extras, n)
@@ -96,17 +105,17 @@ internal fun StatusBarNotification.toPanelNotification(): PanelNotification? = t
     val lines = buildList {
         extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()?.let { add(it) }
         @Suppress("DEPRECATION")
-        extras.getParcelableArrayList<CharSequence>(Notification.EXTRA_MESSAGES)
-            ?.forEach { add(it.toString()) }
+        extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+            ?.forEach { it?.toString()?.let(::add) }
     }.distinct()
 
     val canReply = n.actions?.any { a ->
         a.remoteInputs?.isNotEmpty() == true && a.actionIntent != null
     } == true
 
-    PanelNotification(
-        key = key ?: return null,
-        packageName = packageName ?: return null,
+    return PanelNotification(
+        key = key,
+        packageName = pkg,
         title = title,
         body = body,
         lines = lines,
@@ -115,9 +124,6 @@ internal fun StatusBarNotification.toPanelNotification(): PanelNotification? = t
         isClearable = isClearable,
         canReply = canReply
     )
-} catch (t: Throwable) {
-    Log.w("AppNotificationListener", "skip notification: ${t.javaClass.simpleName}")
-    null
 }
 
 private fun extraText(extras: android.os.Bundle, n: Notification): String? {

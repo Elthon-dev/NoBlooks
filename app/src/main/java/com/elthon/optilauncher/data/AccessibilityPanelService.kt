@@ -7,7 +7,6 @@ import android.content.Intent
 import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
-import android.view.accessibility.AccessibilityGestureEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -62,23 +61,18 @@ class AccessibilityPanelService : AccessibilityService() {
     /**
      * The gesture callback. We only care about a three-finger *single tap* — the
      * least noisy, hardest-to-trigger-by-accident option — which the panel treats
-     * as "show me".
+     * as "show me". Returning true means we consumed it.
      */
-    override fun onGesture(gestureId: Int) {
+    override fun onGesture(gestureId: Int): Boolean {
         when (gestureId) {
             AccessibilityService.GESTURE_3_FINGER_SINGLE_TAP,
             AccessibilityService.GESTURE_3_FINGER_DOUBLE_TAP -> {
                 Log.i(TAG, "three-finger tap -> reveal panel")
                 PanelSignals.reveal()
+                return true
             }
         }
-    }
-
-    override fun onGestureEvent(gestureEvent: AccessibilityGestureEvent) {
-        // Some builds deliver through this overload; route it to the same handler
-        // by mapping the gesture id back through the public constant space.
-        super.onGestureEvent(gestureEvent)
-        onGesture(gestureEvent.gestureId)
+        return false
     }
 
     companion object {

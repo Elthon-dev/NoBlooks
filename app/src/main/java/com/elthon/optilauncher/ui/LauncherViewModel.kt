@@ -118,9 +118,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private val recentsRepo = RecentsRepository(app)
     private val panelController = PanelController(app)
     private val systemActions = SystemActions(app)
-    private val recentsRepo = RecentsRepository(app)
-    private val panelController = PanelController(app)
-    private val systemActions = SystemActions(app)
 
     private val _ui = kotlinx.coroutines.flow.MutableStateFlow(LauncherUiState())
     val ui: kotlinx.coroutines.flow.StateFlow<LauncherUiState> = _ui
