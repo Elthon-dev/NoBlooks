@@ -185,18 +185,15 @@ class AppLauncher(context: Context) {
      * battery-optimization list. Nothing here is hidden-API or reflection.
      */
     fun openAppBatterySettings(packageName: String): Boolean {
+        val appUri = android.net.Uri.parse("package:$packageName")
         val candidates = listOf(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                Intent(android.provider.Settings.ACTION_APP_BATTERY_SETTINGS)
-                    .setData(android.net.Uri.parse("package:$packageName"))
-            } else {
-                Intent(
-                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                    android.net.Uri.parse("package:$packageName")
-                )
-            },
+            // The app's own details page is where the platform's "Battery" entry
+            // lives on every supported version; it is the most reliable target.
+            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, appUri),
+            // The general battery-optimisation list (lets the user set "Unrestricted").
             Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
-            Intent(Intent.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName"))
+            // Last resort: the whole battery/power settings screen.
+            Intent(android.provider.Settings.ACTION_POWER_USAGE_SUMMARY)
         )
         for (intent in candidates) {
             try {
