@@ -143,6 +143,12 @@ fun FloatingIsland(
     onEvent: (IslandEvent) -> Unit,
     onMicAction: () -> Unit,
     modifier: Modifier = Modifier,
+    // While the widget's control centre is open the island steps aside and holds
+    // its collapsed shape: the two surfaces are companions, not competitors, so
+    // they never fight for the same screen space and the island can't grow into
+    // the panel. A tap on the island while open closes the panel instead.
+    controlOpen: Boolean = false,
+    onControlDismiss: () -> Unit = {},
     suggestion: (@Composable () -> Unit)? = null,
     pageContent: @Composable (IslandPage) -> Unit
 ) {
@@ -242,9 +248,11 @@ fun FloatingIsland(
                 screenWidth = screenWidth,
                 screenHeight = screenHeight,
                 instrumentHeightPx = instrumentHeightPx,
+                controlOpen = controlOpen,
                 backPreview = { backPreview.floatValue },
                 onEvent = onEvent,
                 onMicAction = onMicAction,
+                onControlDismiss = onControlDismiss,
                 pageContent = pageContent,
                 modifier = Modifier.align(Alignment.TopStart)
             )
@@ -283,13 +291,27 @@ private fun IslandBody(
     screenWidth: Dp,
     screenHeight: Dp,
     instrumentHeightPx: Int,
+    controlOpen: Boolean,
     backPreview: () -> Float,
     onEvent: (IslandEvent) -> Unit,
     onMicAction: () -> Unit,
+    onControlDismiss: () -> Unit,
     pageContent: @Composable (IslandPage) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
+
+    // The island steps aside while the control centre is open: a critically damped
+    // glide, read only in the layout phase, so the shift costs no recomposition.
+    // It is a *displacement*, not a new home — collapsing the panel animates the
+    // island back to exactly where it was (the same value, reversed).
+    // Kept as a State and read only in the layout phase (below), so the glide never
+    // recomposes the island or its open page.
+    val aside = animateFloatAsState(
+        targetValue = if (controlOpen) 1f else 0f,
+        animationSpec = if (reducedMotion) tween(0) else NbMotion.enterSpring,
+        label = "islandAside"
+    )
 
     // Local animation target. It is normally identical to state.isExpanded, but it
     // lags by one frame when opening so the page can be composed and measured
@@ -389,6 +411,9 @@ private fun IslandBody(
             panelWidth = panelWidthPx,
             panelHeight = panelHeightPx,
             centerY = (screenHeightPx - navBarPx - pillHeightPx) / 2f,
+            // Aside home: bottom-left, one screen-inset above the gesture bar. Deep
+            // enough that even a tall control panel cannot reach down to it.
+            asideY = screenHeightPx - navBarPx - with(density) { NbDim.ScreenInset.toPx() } - pillHeightPx,
             expandedY = panelTopPx,
             cornerTop = with(density) { NbDim.PanelCornerTop.toPx() },
             cornerBottom = with(density) { NbDim.PanelCornerBottom.toPx() },
@@ -437,9 +462,14 @@ private fun IslandBody(
             // from the left-middle to the panel's fixed anchor as it opens.
             .offset {
                 val p = sizeProgress.value.coerceIn(0f, 1f)
+                // Resting vertical home glides down to the aside slot while the
+                // control centre is open, then back. `p` then carries it up to the
+                // expanded anchor when the island opens (never while open, because
+                // expansion is locked then).
+                val restY = lerp(geometry.centerY, geometry.asideY, aside.value)
                 IntOffset(
                     x = geometry.leftInset.roundToInt(),
-                    y = lerp(geometry.centerY, geometry.expandedY, p).roundToInt()
+                    y = lerp(restY, geometry.expandedY, p).roundToInt()
                 )
             }
             .layout { measurable, constraints ->
@@ -477,13 +507,23 @@ private fun IslandBody(
             }
             .background(colors.surfaceSolid)
             .semantics {
-                contentDescription = if (state.isExpanded) {
-                    "NoBlooks island, expanded, ${state.page.label} page"
-                } else {
-                    "NoBlooks island, collapsed. Activate to open apps and settings"
+                contentDescription = when {
+                    controlOpen -> "NoBlooks island, parked while the control centre is open"
+                    state.isExpanded -> "NoBlooks island, expanded, ${state.page.label} page"
+                    else -> "NoBlooks island, collapsed. Activate to open apps and settings"
                 }
-                onClick(label = if (state.isExpanded) "Collapse island" else "Expand island") {
-                    onEvent(if (state.isExpanded) IslandEvent.Collapse else IslandEvent.Expand)
+                onClick(
+                    label = when {
+                        controlOpen -> "Close the control centre"
+                        state.isExpanded -> "Collapse island"
+                        else -> "Expand island"
+                    }
+                ) {
+                    when {
+                        controlOpen -> onControlDismiss()
+                        state.isExpanded -> onEvent(IslandEvent.Collapse)
+                        else -> onEvent(IslandEvent.Expand)
+                    }
                     true
                 }
                 customActions = listOf(
@@ -497,10 +537,13 @@ private fun IslandBody(
                     }
                 )
             }
-            .pointerInput(state.isExpanded) {
+            .pointerInput(state.isExpanded, controlOpen) {
                 // Whole-pill tap only while collapsed; expanded content owns its input.
+                // While the control centre is open the pill is a dismiss target.
                 if (!state.isExpanded) {
-                    detectTapGestures { onEvent(IslandEvent.Toggle) }
+                    detectTapGestures {
+                        if (controlOpen) onControlDismiss() else onEvent(IslandEvent.Toggle)
+                    }
                 }
             }
     ) {
@@ -808,6 +851,9 @@ private data class IslandGeometry(
     val panelHeight: Float,
     /** Top of the capsule when collapsed (left-edge middle). */
     val centerY: Float,
+    /** Where the capsule slides to when the control centre is open: low on the
+     *  left edge, well clear of the top-right panel. */
+    val asideY: Float,
     /** Fixed top of the expanded panel — under the instrument, or level with it. */
     val expandedY: Float,
     val cornerTop: Float,

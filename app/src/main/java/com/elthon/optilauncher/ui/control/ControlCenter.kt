@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -41,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.elthon.optilauncher.data.ControlKey
 import com.elthon.optilauncher.data.RadioState
@@ -131,15 +133,31 @@ fun ControlCenterOverlay(
 
     BoxWithConstraints(modifier.fillMaxSize()) {
         val screenWidthPx = with(density) { maxWidth.toPx() }
+        val screenHeightPx = with(density) { maxHeight.toPx() }
+        // A real margin, not the bare screen inset: the panel floats *inside* the
+        // screen and leaves a strip of wallpaper all around, so it reads as an
+        // object laid over the home screen instead of a full-bleed sheet.
+        val marginPx = with(density) {
+            if (maxWidth > maxHeight) NbDim.ControlMarginLandscape.toPx()
+            else NbDim.ControlMargin.toPx()
+        }
+        val availableHeightPx = screenHeightPx - marginPx * 2f
+
+        // Fit the content: the tiles compose at their natural size and the panel
+        // adopts exactly that height (clamped so it never runs off the screen).
+        // Measured once per content change, not per frame.
+        var contentHeightPx by remember { mutableIntStateOf(0) }
+
         val targetWidthPx = with(density) {
-            maxWidth.coerceAtMost(360.dp).toPx()
+            (maxWidth - NbDim.ControlMargin * 2f).coerceAtMost(360.dp).toPx()
         }
-        val targetHeightPx = with(density) {
-            val wide = maxWidth > maxHeight
-            (if (wide) 230.dp else 300.dp).toPx()
-        }
-        val targetX = screenWidthPx - targetWidthPx - with(density) { NbDim.ScreenInset.toPx() }
+        val targetHeightPx = contentHeightPx
+            .coerceAtLeast(with(density) { 120.dp.toPx() })
+            .coerceAtMost(availableHeightPx)
+        val targetX =
+            screenWidthPx - targetWidthPx - marginPx
         val targetY = originY
+            .coerceIn(marginPx, (screenHeightPx - targetHeightPx - marginPx).coerceAtLeast(marginPx))
 
         // Scrim: pure tap-catcher, faded with progress so a partial back gesture
         // never leaves a half-black screen behind.
@@ -157,21 +175,33 @@ fun ControlCenterOverlay(
                     val p = progress.coerceIn(0f, 1f)
                     val w = lerp(originWidth, targetWidthPx, p).roundToInt().coerceAtLeast(1)
                     val h = lerp(originHeight, targetHeightPx, p).roundToInt().coerceAtLeast(1)
+                    // Keep it on-screen for *every* frame of the morph, not just at
+                    // the ends: interpolate the clamped home, then clamp again.
                     val x = lerp(originX, targetX, p).roundToInt()
+                        .coerceIn(0, (screenWidthPx - w).roundToInt().coerceAtLeast(0))
                     val y = lerp(originY, targetY, p).roundToInt()
+                        .coerceIn(0, (screenHeightPx - h).roundToInt().coerceAtLeast(0))
+                    // Measure the content at the animated width but unconstrained
+                    // height so its natural height is known on the first pass; then
+                    // report the animated height as our size.
                     val placeable = measurable.measure(
                         constraints.copy(
                             minWidth = w,
                             maxWidth = w,
-                            minHeight = h,
-                            maxHeight = h
+                            minHeight = 0,
+                            maxHeight = Constraints.Infinity
                         )
                     )
+                    contentHeightPx = placeable.height
                     layout(w, h) { placeable.placeRelative(x, y) }
                 }
                 .graphicsLayer {
                     val p = progress.coerceIn(0f, 1f)
-                    val corner = lerp(with(density) { NbDim.WidgetCorner.toPx() }, with(density) { NbDim.PanelCornerTop.toPx() }, p)
+                    val corner = lerp(
+                        with(density) { NbDim.WidgetCorner.toPx() },
+                        with(density) { NbDim.PanelCornerTop.toPx() },
+                        p
+                    )
                     shape = RoundedCornerShape(corner.toDp())
                     clip = true
                     shadowElevation = lerp(with(density) { 18.dp.toPx() }, with(density) { 30.dp.toPx() }, p)
@@ -259,7 +289,7 @@ private fun ControlContent(
                 onClick = { onTile(ControlKey.AIRPLANE) }
             )
         }
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(14.dp))
         NbText(
             text = "Tiles open Android's own switches.",
             style = NbType.bodySmall,

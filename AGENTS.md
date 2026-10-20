@@ -78,6 +78,13 @@ called out as **unverified** rather than claimed as working.
   starts from the widget's `boundsInRoot`, springs to a top-right slot, and settles its
   corner from the widget radius to the panel radius. It is a full-screen overlay with a
   scrim and a `BackHandler`, mounted once and owning both its open and close morph.
+- The control centre **fits its content** (the panel adopts the tiles' measured height,
+  clamped to the screen) and floats with a real `NbDim.ControlMargin` so a strip of
+  wallpaper stays visible all around. It is clamped on-screen for *every* frame of the
+  morph, not just at the ends. While it is open, the floating island **steps aside** to
+  a lower-left home (`IslandGeometry.asideY`) and is **locked collapsed** — expansion
+  events are swallowed. Tapping the island, or anywhere else, minimises the widget and
+  the island glides back to exactly its original spot (same value, reversed).
 - **System tiles are honest**, never fake switches: a third-party launcher cannot flip
   a radio, so a tile reads the live state (`ConnectivityManager` transport,
   `AIRPLANE_MODE_ON`, `bluetooth_on`) and opens the platform's own panel

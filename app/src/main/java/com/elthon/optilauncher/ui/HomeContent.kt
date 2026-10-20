@@ -125,35 +125,48 @@ fun HomeContent(
                     .padding(end = NbDim.ScreenInset, top = NbDim.WidgetTopInset)
                     .onSizeChanged { instrumentHeightPx = it.height }
                     .onGloballyPositioned { widgetBounds = it.boundsInRoot() },
-                onClick = { controlOpen = true }
-            )
-
-            // --- control centre (the widget, grown) ------------------------
-            // Always mounted: it owns its own open *and* close morph, so the
-            // collapse still lands on the widget after `controlOpen` has gone
-            // false. The last measured bounds are held so that landing stays put.
-            val bounds = widgetBounds
-            ControlCenterOverlay(
-                open = controlOpen,
-                originX = bounds?.left ?: 0f,
-                originY = bounds?.top ?: 0f,
-                originWidth = bounds?.width ?: 0f,
-                originHeight = bounds?.height ?: 0f,
-                reducedMotion = reducedMotion,
-                onDismiss = { controlOpen = false }
+                onClick = {
+                    // Opening the control centre also drops the island back to its
+                    // capsule: the two can never both be open.
+                    if (ui.island.isExpanded) viewModel.onEvent(IslandEvent.Collapse)
+                    controlOpen = true
+                }
             )
 
             // --- island ----------------------------------------------------
+            // Drawn before the control centre so the panel's scrim (and its
+            // anywhere-tap-to-dismiss) sits on top; the island slides aside behind
+            // the dim rather than disappearing, so the move stays legible.
             FloatingIsland(
                 state = ui.island,
                 mic = ui.mic,
                 reducedMotion = reducedMotion,
                 message = ui.message,
                 instrumentHeightPx = instrumentHeightPx,
-                onEvent = viewModel::onEvent,
+                controlOpen = controlOpen,
+                onControlDismiss = { controlOpen = false },
+                // While the control centre is open the island is locked collapsed:
+                // expansion events are swallowed so the two surfaces can never be
+                // open at once. Everything else (page changes, query) still flows.
+                onEvent = { event ->
+                    val wantsToOpen = event is IslandEvent.Expand ||
+                        event is IslandEvent.Toggle ||
+                        event is IslandEvent.SearchGesture
+                    if (controlOpen && wantsToOpen) {
+                        controlOpen = false
+                    } else if (controlOpen && event is IslandEvent.Collapse) {
+                        // Already collapsed; nothing to do.
+                    } else {
+                        viewModel.onEvent(event)
+                    }
+                },
                 onMicAction = {
-                    viewModel.onEvent(IslandEvent.SelectPage(IslandPage.SETTINGS))
-                    viewModel.onEvent(IslandEvent.Expand)
+                    if (controlOpen) {
+                        controlOpen = false
+                    } else {
+                        viewModel.onEvent(IslandEvent.SelectPage(IslandPage.SETTINGS))
+                        viewModel.onEvent(IslandEvent.Expand)
+                    }
                 },
                 suggestion = {
                     val prediction = ui.habitSummary?.prediction
@@ -256,6 +269,22 @@ fun HomeContent(
                         )
                     }
                 }
+            )
+
+            // --- control centre (the widget, grown) ------------------------
+            // Above the island so its scrim owns every tap: tapping the island, or
+            // anywhere else, minimises the widget and lets the island glide back.
+            // Always mounted: the overlay owns its own open *and* close morph, so
+            // the collapse still lands on the widget after `controlOpen` is false.
+            val bounds = widgetBounds
+            ControlCenterOverlay(
+                open = controlOpen,
+                originX = bounds?.left ?: 0f,
+                originY = bounds?.top ?: 0f,
+                originWidth = bounds?.width ?: 0f,
+                originHeight = bounds?.height ?: 0f,
+                reducedMotion = reducedMotion,
+                onDismiss = { controlOpen = false }
             )
 
             // --- first-run overlay ----------------------------------------

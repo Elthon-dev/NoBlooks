@@ -91,6 +91,10 @@ object NbDim {
     val InstrumentWidth = 252.dp
     /** Breathing room between the instrument's bottom edge and the expanded panel. */
     val InstrumentGap = 14.dp
+
+    /** The control centre floats inside the screen, leaving a strip of wallpaper. */
+    val ControlMargin = 26.dp
+    val ControlMarginLandscape = 18.dp
 }
 
 /**
