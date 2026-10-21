@@ -9,6 +9,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.elthon.optilauncher.core.panel.PanelEvent
 import com.elthon.optilauncher.core.panel.PanelFace
 import com.elthon.optilauncher.core.theme.LauncherTheme
+import com.elthon.optilauncher.data.NotificationAccess
 import com.elthon.optilauncher.data.NotificationBridge
 import com.elthon.optilauncher.data.OverlayPanelActions
 import com.elthon.optilauncher.data.PanelBus
@@ -33,7 +34,13 @@ fun OverlayRoot(actions: OverlayPanelActions) {
     val habits by PanelBus.habits.collectAsState()
     val apps by PanelBus.apps.collectAsState()
     val notifications by NotificationBridge.notifications.collectAsState()
-    val notificationsGranted by NotificationBridge.connected.collectAsState()
+    val notificationsConnected by NotificationBridge.connected.collectAsState()
+    // The grant can change while the overlay lives (the user grants it in Settings,
+    // then goes back to another app). Re-read on each reveal / face change instead
+    // of polling: it is a cheap settings read, not a binder transaction.
+    val notificationsGranted = remember(panel.visible, panel.face) {
+        notificationsConnected || NotificationAccess.isGranted(context)
+    }
 
     // The system animation scale is the honest "reduced motion" signal available
     // outside the launcher's own settings.
@@ -53,6 +60,7 @@ fun OverlayRoot(actions: OverlayPanelActions) {
             habits = habits,
             notifications = notifications,
             notificationsGranted = notificationsGranted,
+            notificationsConnected = notificationsConnected,
             allApps = apps,
             multitaskMode = panel.multitaskMode,
             selectedPackages = panel.selectedPackages,
@@ -68,6 +76,7 @@ fun OverlayRoot(actions: OverlayPanelActions) {
             onToggleMultitaskSelection = { actions.dispatch(PanelEvent.ToggleMultitaskSelection(it)) },
             onLaunchMultitask = { actions.dispatch(PanelEvent.LaunchMultitask) },
             onOpenNotificationAccess = { actions.openNotificationAccess() },
+            onRebindNotification = { actions.rebindNotificationListener() },
             onCollapse = { actions.dispatch(PanelEvent.CollapseToPill) },
             onOpenApp = { actions.openApp(it) },
             onStopApp = { actions.stopApp(it) },

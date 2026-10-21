@@ -39,6 +39,7 @@ import com.elthon.optilauncher.data.IconRenderer
 import com.elthon.optilauncher.data.LaunchRecorder
 import com.elthon.optilauncher.data.MicLevelMeter
 import com.elthon.optilauncher.data.MultitaskLauncher
+import com.elthon.optilauncher.data.NotificationAccess
 import com.elthon.optilauncher.data.NotificationBridge
 import com.elthon.optilauncher.data.PanelController
 import com.elthon.optilauncher.data.PanelSignals
@@ -99,6 +100,8 @@ data class LauncherUiState(
     val notificationAccess: Boolean = false,
     /** The actual special-access grant, even before the listener has rebound. */
     val notificationAccessGranted: Boolean = false,
+    /** Wall-clock time of the last listener callback this process has seen; 0 = none. */
+    val notificationLastEventAtMs: Long = 0L,
     /**
      * True while "Display over other apps" is granted. This is only the permission
      * bit; the ROM can still refuse the window, so the UI never equates this with
@@ -159,6 +162,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private var habitJob: Job? = null
     private var appsRefreshJob: Job? = null
     private var lastReturnHandledAtMs = 0L
+    private var lastAutoRebindAtMs = 0L
 
     init {
         val settings = settingsRepo.load()
@@ -240,6 +244,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             NotificationBridge.connected.collect { connected ->
                 update { it.copy(notificationAccess = connected) }
+            }
+        }
+        viewModelScope.launch {
+            NotificationBridge.lastEventAtMs.collect { at ->
+                update { it.copy(notificationLastEventAtMs = at) }
             }
         }
         refreshPanelArmed()
@@ -343,6 +352,42 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     com.elthon.optilauncher.data.NotificationAccess.isGranted(app)
             )
         }
+    }
+
+    /**
+     * Re-asks the system to bind the notification listener when the grant exists but
+     * the listener is not connected.
+     *
+     * On ColorOS/MIUI a granted listener dies with the process (recents swipe, screen
+     * off) and looks identical to "notifications are blocked". `requestRebind` is the
+     * only supported reconnect call; it is throttled and never runs while connected.
+     * The ROM can still ignore it — the Settings row says so rather than promising.
+     */
+    private fun maybeAutoRebindListener() {
+        val app = getApplication<Application>()
+        if (!NotificationAccess.isGranted(app)) return
+        if (NotificationBridge.connected.value) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastAutoRebindAtMs < AUTO_REBIND_INTERVAL_MS) return
+        lastAutoRebindAtMs = now
+        NotificationAccess.rebind(app)
+    }
+
+    /** Explicit user action from Settings: re-bind without toggling the grant. */
+    fun rebindNotificationListener() {
+        val app = getApplication<Application>()
+        if (!NotificationAccess.isGranted(app)) {
+            update { it.copy(panel = it.panel.reduce(PanelEvent.Hide)) }
+            appLauncher.openNotificationListenerSettings()
+            showMessage("Grant notification access first, then return")
+            return
+        }
+        lastAutoRebindAtMs = android.os.SystemClock.elapsedRealtime()
+        val requested = NotificationAccess.rebind(app)
+        showMessage(
+            if (requested) "Rebind requested — if alerts stay silent, allow Auto-start in App info"
+            else "This ROM refused the rebind request"
+        )
     }
 
     private suspend fun loadPanelRecents() {
@@ -702,6 +747,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         // while away, so the panel's armed / grant state is re-read — both are cheap
         // synchronous reads, never binder scans.
         refreshPanelArmed()
+        // Coming back from Settings is exactly when a granted-but-unbound listener can
+        // be revived; the throttle keeps ordinary returns silent.
+        maybeAutoRebindListener()
     }
 
     fun openWallpaperPicker() {
@@ -847,6 +895,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         private const val MESSAGE_MILLIS = 2600L
         private const val RETURN_DEBOUNCE_MS = 400L
         private const val PACKAGE_REFRESH_DEBOUNCE_MS = 600L
+        private const val AUTO_REBIND_INTERVAL_MS = 60_000L
         private val DARK_TINT = 0xFFEDEDEF.toInt()
         private val LIGHT_TINT = 0xFF16171A.toInt()
     }

@@ -454,6 +454,23 @@ class OverlayPanelActions(private val context: Context) {
         appLauncher.openNotificationListenerSettings()
     }
 
+    /**
+     * Re-asks the system to bind the notification listener. The overlay has no
+     * message channel, so a Toast reports the request (never the result — binding
+     * happens asynchronously and the ROM can ignore it).
+     */
+    fun rebindNotificationListener() {
+        val requested = NotificationAccess.rebind(context)
+        val text = if (requested) {
+            "Notification listener rebind requested"
+        } else {
+            "This ROM refused the rebind request"
+        }
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
     fun openApp(app: RecentApp) {
         PanelBus.dispatch(PanelEvent.Hide)
         openAppPackage(app.packageName)

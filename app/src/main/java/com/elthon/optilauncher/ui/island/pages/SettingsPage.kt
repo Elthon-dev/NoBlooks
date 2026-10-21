@@ -53,6 +53,8 @@ fun SettingsPage(
     overlayGranted: Boolean,
     accessibilityEnabled: Boolean,
     notificationAccessEnabled: Boolean,
+    notificationListenerConnected: Boolean,
+    notificationLastEventAtMs: Long,
     pinnedCount: Int,
     appsCount: Int,
     historyDays: Int,
@@ -68,6 +70,7 @@ fun SettingsPage(
     onOpenOverlaySettings: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
     onOpenNotificationAccessSettings: () -> Unit,
+    onRebindNotificationListener: () -> Unit,
     onAppDetails: () -> Unit,
     onClearHistory: () -> Unit,
     onClearFavorites: () -> Unit,
@@ -197,22 +200,41 @@ fun SettingsPage(
         )
         OptionRow(
             title = "Notification access",
-            description = if (notificationAccessEnabled) {
-                "Granted — the Alerts face lists missed notifications and can reply."
-            } else {
-                "Off — Android exposes notifications only through this special access. " +
-                    "Some ROMs hide the toggle, so this opens NoBlooks' own entry."
+            description = when {
+                !notificationAccessEnabled ->
+                    "Off — Android exposes notifications only through this special access. " +
+                        "Some ROMs hide the toggle, so this opens NoBlooks' own entry."
+
+                notificationListenerConnected ->
+                    "Granted — the listener is bound. Missed notifications appear in Alerts."
+
+                else ->
+                    "Granted, but the listener is not bound right now. ColorOS/MIUI can " +
+                        "kill it with the app; reconnect below, and allow Auto-start."
             },
             onClick = onOpenNotificationAccessSettings
         )
+        if (notificationAccessEnabled) {
+            OptionRow(
+                title = "Reconnect notification listener",
+                description = if (notificationListenerConnected) {
+                    "The listener is bound. Rebind only if the Alerts face went silent."
+                } else {
+                    "Asks Android to re-bind NoBlooks without toggling the grant. " +
+                        "If it stays silent, App info → allow Auto-start and background activity."
+                },
+                onClick = onRebindNotificationListener
+            )
+        }
         if (oemPolicy.wantsKeepAliveHint) {
             OptionRow(
                 title = "Keep alive in the background",
                 description = when (oemPolicy) {
                     OemBackgroundPolicy.COLOROS_FAMILY ->
                         "This ROM (ColorOS/OxygenOS family) suspends third-party " +
-                            "launchers; returning Home can show a blank stretch first. " +
-                            "Exempting NoBlooks is the only fix — it is a system behaviour."
+                            "launchers and kills background services. App info → allow " +
+                            "Auto-start and background activity; the Home transition can " +
+                            "still show a blank stretch first — that part is system-side."
 
                     else ->
                         "This ROM has an aggressive battery manager. Exempting NoBlooks " +
@@ -238,6 +260,12 @@ fun SettingsPage(
                 DiagnosticLine("Microphone", micPermissionLabel)
                 DiagnosticLine("Default home", isDefaultHome.toString())
                 DiagnosticLine("Notification access", notificationAccessEnabled.toString())
+                DiagnosticLine("Listener connected", notificationListenerConnected.toString())
+                DiagnosticLine(
+                    "Listener events",
+                    if (notificationLastEventAtMs <= 0L) "none this session"
+                    else lastEventLabel(notificationLastEventAtMs)
+                )
                 DiagnosticLine("Landscape", allowLandscape.toString())
             }
         }
@@ -266,13 +294,27 @@ fun SettingsPage(
     }
 }
 
+/**
+ * Relative label for the listener heartbeat. Display-only: the bridge stores the
+ * wall clock of the last callback *this process* saw, so "none this session" is
+ * never presented as "the listener has never worked".
+ */
+private fun lastEventLabel(atMs: Long): String {
+    if (atMs <= 0L) return "not yet this session"
+    val age = (System.currentTimeMillis() - atMs).coerceAtLeast(0L)
+    return when {
+        age < 60_000L -> "just now"
+        age < 3_600_000L -> "${age / 60_000L}m ago"
+        else -> "${age / 3_600_000L}h ago"
+    }
+}
+
 @Composable
 private fun DiagnosticLine(
     label: String,
     value: String,
     modifier: Modifier = Modifier
-) {
-    val colors = LocalNbColors.current
+) {    val colors = LocalNbColors.current
     Row(
         modifier = modifier
             .fillMaxWidth()

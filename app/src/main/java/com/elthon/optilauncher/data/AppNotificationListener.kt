@@ -147,6 +147,30 @@ object NotificationAccess {
     } catch (_: Throwable) {
         false
     }
+
+    /**
+     * Asks the system to re-bind the listener without touching the grant.
+     *
+     * `requestRebind` is the only sanctioned reconnect call before `onListenerConnected`
+     * or after `onListenerDisconnected`; it fails for listeners that were never
+     * granted, so we check the grant first. This is the app-level half of the OEM
+     * story: ColorOS/MIUI kill the listener in the background, and after an app
+     * update the system does not always resume it until something asks. Without
+     * auto-start the ROM may ignore even this — the UI says so instead of promising.
+     */
+    fun rebind(context: android.content.Context): Boolean {
+        val app = context.applicationContext
+        if (!isGranted(app)) return false
+        return try {
+            NotificationListenerService.requestRebind(
+                android.content.ComponentName(app, AppNotificationListener::class.java)
+            )
+            true
+        } catch (t: Throwable) {
+            Log.w("NotificationAccess", "rebind refused: ${t.javaClass.simpleName}")
+            false
+        }
+    }
 }
 
 /**
@@ -163,12 +187,22 @@ object NotificationBridge {
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
 
+    /**
+     * Last time this process saw a listener callback (connect or a posted/removed
+     * notification). Zero means "nothing since this launch" — it is a diagnostic,
+     * not proof the listener has never worked.
+     */
+    private val _lastEventAtMs = MutableStateFlow(0L)
+    val lastEventAtMs: StateFlow<Long> = _lastEventAtMs.asStateFlow()
+
     internal fun setNotifications(list: List<PanelNotification>) {
         _notifications.value = list
+        _lastEventAtMs.value = System.currentTimeMillis()
     }
 
     internal fun setConnected(value: Boolean) {
         _connected.value = value
+        if (value) _lastEventAtMs.value = System.currentTimeMillis()
         if (!value) _notifications.value = emptyList()
     }
 }

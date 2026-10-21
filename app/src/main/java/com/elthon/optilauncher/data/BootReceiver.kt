@@ -27,7 +27,24 @@ class BootReceiver : BroadcastReceiver() {
         when (intent?.action) {
             Intent.ACTION_BOOT_COMPLETED,
             "android.intent.action.QUICKBOOT_POWERON",
-            "com.htc.intent.action.QUICKBOOT_POWERON" -> rearm(context)
+            "com.htc.intent.action.QUICKBOOT_POWERON" -> {
+                rebindListener(context)
+                rearm(context)
+            }
+
+            // An update kills the process (and with it the foreground service and
+            // the listener binding). Android delivers this once the new APK is in
+            // place, so this is the one reliable moment to ask for both back.
+            Intent.ACTION_MY_PACKAGE_REPLACED -> {
+                rebindListener(context)
+                rearm(context)
+            }
+        }
+    }
+
+    private fun rebindListener(context: Context) {
+        if (NotificationAccess.rebind(context)) {
+            Log.i(TAG, "listener rebind requested")
         }
     }
 

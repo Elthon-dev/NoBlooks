@@ -88,6 +88,7 @@ fun ControlPanel(
     habits: List<RecentApp>,
     notifications: List<PanelNotification>,
     notificationsGranted: Boolean,
+    notificationsConnected: Boolean,
     allApps: List<RecentApp>,
     multitaskMode: MultitaskMode,
     selectedPackages: List<String>,
@@ -102,6 +103,7 @@ fun ControlPanel(
     onToggleMultitaskSelection: (String) -> Unit,
     onLaunchMultitask: () -> Unit,
     onOpenNotificationAccess: () -> Unit,
+    onRebindNotification: () -> Unit,
     onCollapse: () -> Unit,
     onOpenApp: (RecentApp) -> Unit,
     onStopApp: (RecentApp) -> Unit,
@@ -284,11 +286,13 @@ fun ControlPanel(
                     PanelFace.NOTIFICATIONS -> NotificationsBody(
                         notifications = notifications,
                         granted = notificationsGranted,
+                        connected = notificationsConnected,
                         allowReply = allowReply,
                         onOpen = onOpenNotification,
                         onDismiss = onDismissNotification,
                         onReply = onReply,
-                        onOpenAccess = onOpenNotificationAccess
+                        onOpenAccess = onOpenNotificationAccess,
+                        onRebind = onRebindNotification
                     )
 
                     PanelFace.HABITS -> HabitsBody(
@@ -722,11 +726,13 @@ private fun PickerRow(
 private fun NotificationsBody(
     notifications: List<PanelNotification>,
     granted: Boolean,
+    connected: Boolean,
     allowReply: Boolean,
     onOpen: (PanelNotification) -> Unit,
     onDismiss: (PanelNotification) -> Unit,
     onReply: (PanelNotification, String) -> Unit,
-    onOpenAccess: () -> Unit
+    onOpenAccess: () -> Unit,
+    onRebind: () -> Unit
 ) {
     if (!granted) {
         PanelEmpty(
@@ -735,6 +741,19 @@ private fun NotificationsBody(
                 "The button opens NoBlooks' own entry — some ROMs hide it from the list.",
             actionLabel = "Open access settings",
             onAction = onOpenAccess
+        )
+        return
+    }
+    if (!connected) {
+        // The grant is on, but Android is not delivering events: on ColorOS/MIUI the
+        // listener dies with the app's process. "Off" would be a lie, and "Nothing
+        // missed" would be worse — offer the only supported reconnect request.
+        PanelEmpty(
+            "Listener not bound",
+            "Access is granted, but Android isn't delivering events right now. " +
+                "Reconnect; if it stays silent, allow Auto-start in App info.",
+            actionLabel = "Reconnect listener",
+            onAction = onRebind
         )
         return
     }
