@@ -211,17 +211,17 @@ fun SettingsPage(
 
                 else ->
                     "Granted, but the listener is not bound right now. ColorOS/MIUI can " +
-                        "kill it with the app; reconnect below, and allow Auto-start."
+                        "kill it with the app; force a reconnect below, and allow Auto-start."
             },
             onClick = onOpenNotificationAccessSettings
         )
         if (notificationAccessEnabled) {
             OptionRow(
-                title = "Reconnect notification listener",
+                title = "Force reconnect listener",
                 description = if (notificationListenerConnected) {
                     "The listener is bound. Rebind only if the Alerts face went silent."
                 } else {
-                    "Asks Android to re-bind NoBlooks without toggling the grant. " +
+                    "Disables and re-enables the listener component, then asks Android to bind it. " +
                         "If it stays silent, App info → allow Auto-start and background activity."
                 },
                 onClick = onRebindNotificationListener

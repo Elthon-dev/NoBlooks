@@ -382,12 +382,23 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             showMessage("Grant notification access first, then return")
             return
         }
+        if (NotificationBridge.connected.value) {
+            showMessage("Listener is already connected")
+            return
+        }
         lastAutoRebindAtMs = android.os.SystemClock.elapsedRealtime()
-        val requested = NotificationAccess.rebind(app)
-        showMessage(
-            if (requested) "Rebind requested — if alerts stay silent, allow Auto-start in App info"
-            else "This ROM refused the rebind request"
-        )
+        val forced = NotificationAccess.forceRebind(app)
+        viewModelScope.launch {
+            // Binding happens asynchronously; probe before telling the user anything.
+            kotlinx.coroutines.delay(REBIND_PROBE_MS)
+            showMessage(
+                when {
+                    NotificationBridge.connected.value -> "Listener reconnected"
+                    forced -> "Rebind forced — if alerts stay silent, allow Auto-start in App info"
+                    else -> "This ROM refused the reconnect request"
+                }
+            )
+        }
     }
 
     private suspend fun loadPanelRecents() {
@@ -896,6 +907,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         private const val RETURN_DEBOUNCE_MS = 400L
         private const val PACKAGE_REFRESH_DEBOUNCE_MS = 600L
         private const val AUTO_REBIND_INTERVAL_MS = 60_000L
+        private const val REBIND_PROBE_MS = 1_600L
         private val DARK_TINT = 0xFFEDEDEF.toInt()
         private val LIGHT_TINT = 0xFF16171A.toInt()
     }

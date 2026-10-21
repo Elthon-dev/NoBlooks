@@ -106,6 +106,21 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
                 }
             }
         }
+        // The system can drop a granted listener while the process survives (OEM
+        // task cleaners, a crash-restart, an update). `requestRebind` alone only
+        // runs when something asks; this watchdog is that something. It is a cheap
+        // no-op while connected and never touches the grant or the component, so it
+        // cannot get the listener blacklisted the way repeated enable/disable
+        // toggling can. The explicit Settings action uses the stronger force path.
+        lifecycleScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(LISTENER_WATCHDOG_MS)
+                val granted = NotificationAccess.isGranted(this@ComposeOverlayService)
+                if (granted && !NotificationBridge.connected.value) {
+                    NotificationAccess.rebind(this@ComposeOverlayService)
+                }
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -313,6 +328,8 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
         /** Window reveal: short emphasized fade + rise. Matches `NbMotion.Standard`. */
         private const val SHOW_MS = 180L
         private const val HIDE_MS = 140L
+        /** How often the always-on service retries a granted-but-unbound listener. */
+        private const val LISTENER_WATCHDOG_MS = 90_000L
         private val SHOW_CURVE = android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f)
         private val HIDE_CURVE = android.view.animation.PathInterpolator(0.3f, 0f, 0.8f, 0.15f)
 
@@ -455,17 +472,31 @@ class OverlayPanelActions(private val context: Context) {
     }
 
     /**
-     * Re-asks the system to bind the notification listener. The overlay has no
-     * message channel, so a Toast reports the request (never the result — binding
-     * happens asynchronously and the ROM can ignore it).
+     * Forces the notification listener back into the system's binding queue.
+     *
+     * `requestRebind` alone can be ignored for a listener stuck in an
+     * enabled-but-unbound state, so the explicit action uses the stronger
+     * component re-enable path. Binding is asynchronous and the ROM can still
+     * refuse it, so the Toast reports the *probe* result after a short wait — never
+     * a request that was merely sent.
      */
     fun rebindNotificationListener() {
-        val requested = NotificationAccess.rebind(context)
-        val text = if (requested) {
-            "Notification listener rebind requested"
-        } else {
-            "This ROM refused the rebind request"
+        if (NotificationBridge.connected.value) {
+            toast("Listener is already connected")
+            return
         }
+        val forced = NotificationAccess.forceRebind(context)
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            val text = when {
+                NotificationBridge.connected.value -> "Listener reconnected"
+                forced -> "Rebind forced — if alerts stay silent, allow Auto-start in App info"
+                else -> "This ROM refused the reconnect request"
+            }
+            toast(text)
+        }, REBIND_PROBE_MS)
+    }
+
+    private fun toast(text: String) {
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show()
         }
@@ -506,3 +537,5 @@ class OverlayPanelActions(private val context: Context) {
         controller.dismissNotification(key)
     }
 }
+
+private const val REBIND_PROBE_MS = 1_600L

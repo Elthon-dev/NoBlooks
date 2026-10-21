@@ -171,6 +171,42 @@ object NotificationAccess {
             false
         }
     }
+
+    /**
+     * The explicit "force" reconnect, for when [rebind] alone has been ignored.
+     *
+     * A listener that was killed hard (or disabled by the system after a crash) can
+     * sit in an enabled-but-unbound limbo where `requestRebind` does nothing. The
+     * documented escape hatch is toggling the component: disabling and re-enabling
+     * with [android.content.pm.PackageManager.DONT_KILL_APP] puts it back into the
+     * system's binding queue without tearing down the rest of this process and
+     * without touching the user's grant. This is still a request — the ROM can
+     * refuse to bind — so callers probe [NotificationBridge.connected] before
+     * claiming success.
+     */
+    fun forceRebind(context: android.content.Context): Boolean {
+        val app = context.applicationContext
+        if (!isGranted(app)) return false
+        val pm = app.packageManager
+        val component = android.content.ComponentName(app, AppNotificationListener::class.java)
+        return try {
+            pm.setComponentEnabledSetting(
+                component,
+                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                android.content.pm.PackageManager.DONT_KILL_APP
+            )
+            pm.setComponentEnabledSetting(
+                component,
+                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                android.content.pm.PackageManager.DONT_KILL_APP
+            )
+            NotificationListenerService.requestRebind(component)
+            true
+        } catch (t: Throwable) {
+            Log.w("NotificationAccess", "force rebind refused: ${t.javaClass.simpleName}")
+            false
+        }
+    }
 }
 
 /**

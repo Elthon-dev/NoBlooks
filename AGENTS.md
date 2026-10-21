@@ -193,22 +193,34 @@ changes and one uninstall is required (Android cannot update across signatures).
   - **Granted is not the same as bound.** On ColorOS/MIUI the listener can be killed
     with the process while the grant stays on, which used to read as "access off" in
     the Alerts face. The bridge carries a heartbeat (`lastEventAtMs`), the Alerts face
-    distinguishes *grant* from *connection* and offers `NotificationAccess.rebind()`
-    — `requestRebind(ComponentName)` is the only supported reconnect call and fails
-    without a grant. Returning Home retries at most once a minute, and
+    distinguishes *grant* from *connection* and offers a reconnect action. There are
+    two reconnect paths: `NotificationAccess.rebind()` (plain
+    `requestRebind(ComponentName)`, the only sanctioned call, fails without a grant)
+    and `forceRebind()` (disable+enable the component with `DONT_KILL_APP`, then
+    rebind) for a listener stuck in enabled-but-unbound limbo. The explicit Settings
+    action uses the force path and **probes `NotificationBridge.connected` after
+    1.6s** before reporting `Listener reconnected`; the request alone is never
+    reported as success. The always-on overlay service retries the plain rebind every
+    90s while granted-but-unbound. Returning Home retries at most once a minute, and
     `MY_PACKAGE_REPLACED`/boot receivers rebind and re-arm the panel. The ROM may
-    still ignore the rebind; Settings points at **App info → Auto-start + background
-    activity**, which is the verified ColorOS workaround. Never claim the listener is
-    receiving when only the grant is known.
-  - **Access / multitasking** is a request, never a promise. **Split** uses
-    `FLAG_ACTIVITY_LAUNCH_ADJACENT` (public since API 24; on Android 12L+ a full-screen
-    activity can enter split); **Float** uses `ActivityOptions.setLaunchBounds` only
-    when the device declares `FEATURE_FREEFORM_WINDOW_MANAGEMENT`; **Triple** requests
-    app 1 floating, app 2 normal, app 3 adjacent. `setLaunchWindowingMode` is hidden
-    API and must not be used/reflected. `core/panel/MultitaskMode` caps the picker at
-    the required count (3 for triple), ticks are checkmarked on the right, and
-    `PanelStateTest` covers the cap. The UI/footers say the system decides the final
-    layout, and `data/MultitaskLauncher` reports downgrades/blocks honestly.
+    still ignore every request; Settings points at **App info → Auto-start +
+    background activity**, which is the verified ColorOS workaround. Never claim the
+    listener is receiving when only the grant is known.
+  - **Access / multitasking** is a request, never a promise. **Split now asks for two
+    apps** — a single adjacent launch has nothing to pair with (the flag pairs the
+    target with the *caller's* window, and the application context has no task), which
+    is why it used to open beside the launcher or do nothing. `data/LaunchPairActivity`
+    is an invisible trampoline with its own task affinity: it launches app 1 normally,
+    waits one beat (700ms, inside the background-launch grace window), then launches
+    app 2 from a real Activity with `FLAG_ACTIVITY_LAUNCH_ADJACENT`. **Float** uses
+    `ActivityOptions.setLaunchBounds` only when the device declares
+    `FEATURE_FREEFORM_WINDOW_MANAGEMENT`; **Triple** requests app 1 floating (plain
+    when freeform is absent), then apps 2+3 through the same pair trampoline.
+    `setLaunchWindowingMode` is hidden API and must not be used/reflected.
+    `core/panel/MultitaskMode` caps the picker at the required count (2 for split,
+    3 for triple), ticks are checkmarked on the right, and `PanelStateTest` covers the
+    caps. The UI/footers say the system decides the final layout, and
+    `data/MultitaskLauncher` reports downgrades/blocks honestly.
   - It **never renders a package name**: unlabeled recents entries and untitled
     notifications show "Unknown app" / "Notification", never `com.*`.
   - `Hide` / `AutoHideElapsed` are idempotent, `CollapseToPill` never hides, and a
