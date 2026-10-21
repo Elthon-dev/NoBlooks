@@ -22,17 +22,21 @@ import android.util.Log
  */
 class SystemActions(private val context: Context) {
 
-    /** Go to the home screen. */
+    /**
+     * Go to the home screen.
+     *
+     * This is the platform's Home action, not "bring NoBlooks forward": when the
+     * user has another launcher selected, Home must honour that choice. The old
+     * self-forward shortcut silently overrode the default home app.
+     */
     fun home(): Boolean {
-        // As the launcher, bringing our own task forward is the instant, animation-free path.
-        if (bringSelfForward()) return true
-        val a11y = AccessibilityPanelService.instance
-        if (a11y != null) {
-            return try {
-                a11y.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+        AccessibilityPanelService.instance?.let { a11y ->
+            try {
+                if (a11y.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)) {
+                    return true
+                }
             } catch (t: Throwable) {
                 Log.w(TAG, "home global action failed: ${t.javaClass.simpleName}")
-                false
             }
         }
         return startHomeIntent()
@@ -77,21 +81,6 @@ class SystemActions(private val context: Context) {
         return false
     }
 
-    private fun bringSelfForward(): Boolean = try {
-        val intent = Intent(context, Class.forName(SELF_ACTIVITY)).apply {
-            addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                    Intent.FLAG_ACTIVITY_NO_ANIMATION
-            )
-        }
-        context.startActivity(intent)
-        true
-    } catch (t: Throwable) {
-        Log.w(TAG, "self-forward failed: ${t.javaClass.simpleName}")
-        false
-    }
-
     private fun startHomeIntent(): Boolean = try {
         val intent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)
@@ -106,7 +95,6 @@ class SystemActions(private val context: Context) {
 
     companion object {
         private const val TAG = "SystemActions"
-        private const val SELF_ACTIVITY = "com.elthon.optilauncher.MainActivity"
 
         /**
          * `Intent.CATEGORY_APP_RECENTS`, spelled out. The constant exists but not

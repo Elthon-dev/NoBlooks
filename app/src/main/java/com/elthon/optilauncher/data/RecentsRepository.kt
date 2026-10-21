@@ -31,6 +31,17 @@ class RecentsRepository(private val context: Context) {
     private val packageManager: PackageManager get() = context.packageManager
 
     /**
+     * Raw MRU results are cached for a few seconds. Opening a face and then
+     * re-opening it used to run a 12-hour `queryEvents` scan every time, on the
+     * same hot path that draws the panel. Labels and live-process flags are applied
+     * per call, so the cache cannot hide a newly opened app for long.
+     */
+    private val lock = Any()
+    private var cachedMru: List<Pair<String, Long>>? = null
+    private var cachedWindowMs = 0L
+    private var cachedAtElapsedMs = 0L
+
+    /**
      * Returns the MRU list, newest first. [livePackages], when supplied, marks
      * which entries are currently alive (from `dumpsys activity recents`).
      */
@@ -40,15 +51,47 @@ class RecentsRepository(private val context: Context) {
         max: Int = DEFAULT_MAX,
         livePackages: Set<String> = emptySet()
     ): List<RecentApp> = withContext(Dispatchers.IO) {
+        val mru = mruWithCache(windowMs) ?: return@withContext emptyList()
+
+        mru.map { (pkg, ts) ->
+            RecentApp(
+                packageName = pkg,
+                label = labelFor(pkg),
+                lastUsedMs = ts,
+                liveProcess = pkg in livePackages
+            )
+        }.forPanel(selfPackage = selfPackage, max = max)
+    }
+
+    private fun mruWithCache(windowMs: Long): List<Pair<String, Long>>? {
+        val now = android.os.SystemClock.elapsedRealtime()
+        synchronized(lock) {
+            val cached = cachedMru
+            if (cached != null && cachedWindowMs == windowMs &&
+                now - cachedAtElapsedMs < CACHE_TTL_MS
+            ) {
+                return cached
+            }
+        }
+        val fresh = queryMru(windowMs) ?: return null
+        synchronized(lock) {
+            cachedMru = fresh
+            cachedWindowMs = windowMs
+            cachedAtElapsedMs = android.os.SystemClock.elapsedRealtime()
+        }
+        return fresh
+    }
+
+    private fun queryMru(windowMs: Long): List<Pair<String, Long>>? {
         val um = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
-            ?: return@withContext emptyList()
+            ?: return emptyList()
 
         val end = System.currentTimeMillis()
         val begin = end - windowMs
 
         val lastResume = LinkedHashMap<String, Long>()
         try {
-            val events = um.queryEvents(begin, end) ?: return@withContext emptyList()
+            val events = um.queryEvents(begin, end) ?: return emptyList()
             val e = UsageEvents.Event()
             while (events.hasNextEvent()) {
                 events.getNextEvent(e)
@@ -60,19 +103,18 @@ class RecentsRepository(private val context: Context) {
                 }
             }
         } catch (_: Throwable) {
-            return@withContext emptyList()
+            return emptyList()
         }
 
-        lastResume.entries
-            .map { (pkg, ts) ->
-                RecentApp(
-                    packageName = pkg,
-                    label = labelFor(pkg),
-                    lastUsedMs = ts,
-                    liveProcess = pkg in livePackages
-                )
-            }
-            .forPanel(selfPackage = selfPackage, max = max)
+        return lastResume.entries.map { it.key to it.value }
+    }
+
+    /** Drops the MRU cache after an action that changes recency (force-stop). */
+    fun invalidate() {
+        synchronized(lock) {
+            cachedMru = null
+            cachedAtElapsedMs = 0L
+        }
     }
 
     /**
@@ -80,11 +122,17 @@ class RecentsRepository(private val context: Context) {
      * uninstalled between the query and now) is dropped rather than shown as a raw
      * package name — the panel must never display `com.*` chrome.
      */
-    private fun labelFor(pkg: String): String = try {
-        val info = packageManager.getApplicationInfo(pkg, 0)
-        packageManager.getApplicationLabel(info).toString()
-    } catch (_: Throwable) {
-        ""
+    private var labelCache: HashMap<String, String> = HashMap()
+
+    private fun labelFor(pkg: String): String = synchronized(labelCache) {
+        labelCache.getOrPut(pkg) {
+            try {
+                val info = packageManager.getApplicationInfo(pkg, 0)
+                packageManager.getApplicationLabel(info).toString()
+            } catch (_: Throwable) {
+                ""
+            }
+        }
     }
 
     /** True when this device lets us read usage events at all. */
@@ -103,6 +151,8 @@ class RecentsRepository(private val context: Context) {
         /** Usage events are only retained "a few days"; 12h is plenty for a switcher. */
         const val DEFAULT_WINDOW_MS = 12L * 60 * 60 * 1000
         const val DEFAULT_MAX = 12
+        /** Short enough that the list still feels live, long enough to stop re-scans. */
+        private const val CACHE_TTL_MS = 5_000L
 
         /** Packages we never attribute as "live" even if dumpsys mentions them. */
         val IGNORED = setOf(SYSTEM_UI_PACKAGE)

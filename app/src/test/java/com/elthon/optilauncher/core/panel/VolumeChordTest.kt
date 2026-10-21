@@ -23,6 +23,24 @@ class VolumeChordTest {
     }
 
     @Test
+    fun `a chord at uptime zero still fires`() {
+        // 0 is a valid monotonic reading; it must not double as "key is up".
+        val c = chord()
+        assertFalse(c.onKey(VolumeKey.UP, down = true, nowMs = 0L))
+        assertTrue(c.onKey(VolumeKey.DOWN, down = true, nowMs = 80L))
+    }
+
+    @Test
+    fun `a repeated down does not count as a fresh press`() {
+        val c = chord()
+        c.onKey(VolumeKey.UP, down = true, nowMs = 1_000L)
+        assertTrue(c.onKey(VolumeKey.DOWN, down = true, nowMs = 1_050L))
+        // Held-key repeats arrive with the same state; they must not re-arm.
+        assertFalse(c.onKey(VolumeKey.DOWN, down = true, nowMs = 1_060L))
+        assertFalse(c.onKey(VolumeKey.DOWN, down = true, nowMs = 2_700L))
+    }
+
+    @Test
     fun `order does not matter`() {
         val c = chord()
         assertFalse(c.onKey(VolumeKey.DOWN, down = true, nowMs = 2_000L))

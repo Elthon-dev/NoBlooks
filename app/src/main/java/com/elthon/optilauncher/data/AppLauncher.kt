@@ -41,6 +41,12 @@ class AppLauncher(context: Context) {
             pm.hasSystemFeature(DeviceCaps.FREEFORM_FEATURE)
         } catch (_: Throwable) {
             false
+        },
+        isLowRam = try {
+            (appContext.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager)
+                ?.isLowRamDevice == true
+        } catch (_: Throwable) {
+            false
         }
     )
 

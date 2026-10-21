@@ -275,20 +275,31 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         val previous = _ui.value.panel
 
         when (event) {
-            PanelEvent.Home -> systemActions.home()
-
-            PanelEvent.SystemRecents -> {
-                // Prefer the real system overview; if this ROM won't show it, open
-                // our own list instead of silently doing nothing.
-                val opened = systemActions.recents()
-                if (!opened) {
-                    update { it.copy(panel = it.panel.copy(visible = true, face = PanelFace.RECENTS)) }
-                    refreshPanelRecents()
+            PanelEvent.Home -> {
+                if (!systemActions.home()) {
+                    showMessage("Home action unavailable on this device")
                     return
                 }
             }
 
-            PanelEvent.SystemNotifications -> systemActions.notifications()
+            PanelEvent.SystemRecents -> {
+                // This is the system Overview, not the launcher's usage list. If the
+                // platform refuses, say so and leave the panel up instead of
+                // substituting a package-level page for the real task switcher.
+                if (!systemActions.recents()) {
+                    showMessage("System Recents is unavailable here; enable accessibility and retry")
+                    return
+                }
+            }
+
+            PanelEvent.SystemNotifications -> {
+                // The real shade needs an accessibility global action. There is no
+                // public intent that pulls it down, so never fake it with a list.
+                if (!systemActions.notifications()) {
+                    showMessage("Enable NoBlooks accessibility to open the notification shade")
+                    return
+                }
+            }
 
             is PanelEvent.ShowFace -> when (event.face) {
                 PanelFace.RECENTS -> refreshPanelRecents()
@@ -403,8 +414,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun loadPanelRecents() {
         val self = getApplication<Application>().packageName
-        val live = panelController.liveRecentPackages()
-        val list = recentsRepo.recents(selfPackage = self, livePackages = live)
+        val list = withContext(Dispatchers.IO) {
+            com.elthon.optilauncher.data.PerfTrace.section("NoBlooks.recents.load") {
+                val live = panelController.liveRecentPackages()
+                recentsRepo.recents(selfPackage = self, livePackages = live)
+            }
+        }
         update { it.copy(panelRecents = list) }
     }
 
@@ -433,6 +448,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             }
             val verdict = panelController.forceStop(app.packageName)
             update { it.copy(panel = it.panel.reduce(PanelEvent.SetStopVerdict(verdict))) }
+            recentsRepo.invalidate()
             loadPanelRecents()
         }
     }
@@ -457,6 +473,19 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // --------------------------------------------------------------- island
+
+    /**
+     * The pill's Habits button: hide the panel and open the real in-app habit
+     * page. The overlay reaches this through an Activity intent; in-app it is a
+     * state transition, so the existing habit interface is reused rather than a
+     * second, lookalike list.
+     */
+    fun openHabitsFromPanel() {
+        update { it.copy(panel = it.panel.reduce(PanelEvent.Hide)) }
+        onEvent(IslandEvent.SelectPage(IslandPage.HABITS))
+        onEvent(IslandEvent.Expand)
+        refreshHabits()
+    }
 
     fun onEvent(event: IslandEvent) {
         val previous = _ui.value.island
@@ -570,7 +599,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         )
         val text = when (outcome) {
             is LaunchOutcome.Started -> {
-                recorder.record(entry.packageName)
+                // The local log is a prefs write, not part of showing the launch
+                // result; keep it off the main thread.
+                viewModelScope.launch(Dispatchers.IO) { recorder.record(entry.packageName) }
+                // The panel's MRU cache would otherwise miss the app the user just
+                // opened if they reveal the panel within the five-second TTL.
+                recentsRepo.invalidate()
                 "Opened ${entry.label}"
             }
 

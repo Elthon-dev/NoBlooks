@@ -12,7 +12,9 @@ enum class WindowMode { NORMAL, SPLIT, FREEFORM }
 data class DeviceCaps(
     val supportsSplitScreen: Boolean = true,
     /** pm.hasSystemFeature(FEATURE_FREEFORM_WINDOW_MANAGEMENT) */
-    val supportsFreeform: Boolean = false
+    val supportsFreeform: Boolean = false,
+    /** ActivityManager.isLowRamDevice — a warning, never a silent downgrade. */
+    val isLowRam: Boolean = false
 ) {
     companion object {
         const val FREEFORM_FEATURE = "android.software.freeform_window_management"

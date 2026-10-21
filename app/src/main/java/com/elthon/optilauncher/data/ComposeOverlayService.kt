@@ -75,6 +75,10 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
         controller = OverlayPanelActions(applicationContext)
         startAsForeground()
         PanelBus.setOverlayActive(true)
+        // Mount the Compose window now, parked and transparent. Waiting for the
+        // first reveal meant the first open paid for composition plus inflation;
+        // the window has always been meant to live for the service's life anyway.
+        showOverlay()
 
         // The window stays mounted for the service's whole life (re-adding a
         // ComposeView breaks its composition, per the platform behaviour). Its
@@ -128,6 +132,13 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
         when (intent?.action) {
             ACTION_SHOW -> {
                 if (overlayView == null) showOverlay()
+                if (overlayView == null) {
+                    android.widget.Toast.makeText(
+                        this,
+                        "Allow \"Display over other apps\" to use the edge panel",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
                 PanelBus.dispatch(PanelEvent.Reveal)
             }
 
@@ -229,7 +240,9 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
         val wm = (getSystemService(Context.WINDOW_SERVICE) as? WindowManager) ?: return
         windowManager = wm
 
-        val view = OverlayComposeHost(this, controller).build()
+        val view = PerfTrace.section("NoBlooks.overlay.compose") {
+            OverlayComposeHost(this, controller).build()
+        }
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -249,7 +262,7 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
             // reveal in, exactly like every later one.
             view.visibility = android.view.View.GONE
             view.alpha = 0f
-            wm.addView(view, lp)
+            PerfTrace.section("NoBlooks.overlay.addView") { wm.addView(view, lp) }
             overlayView = view
             params = lp
             windowTargetVisible = false
@@ -391,14 +404,20 @@ class OverlayPanelActions(private val context: Context) {
     /** Applies an event to the bus and performs any system side effect it implies. */
     fun dispatch(event: PanelEvent) {
         when (event) {
-            PanelEvent.Home -> systemActions.home()
-            PanelEvent.SystemRecents -> if (!systemActions.recents()) {
-                PanelBus.dispatch(PanelEvent.ShowFace(PanelFace.RECENTS))
-                refreshRecents()
+            PanelEvent.Home -> if (!systemActions.home()) {
+                toast("Home action unavailable on this device")
                 return
             }
 
-            PanelEvent.SystemNotifications -> systemActions.notifications()
+            PanelEvent.SystemRecents -> if (!systemActions.recents()) {
+                toast("System Recents is unavailable here; enable accessibility and retry")
+                return
+            }
+
+            PanelEvent.SystemNotifications -> if (!systemActions.notifications()) {
+                toast("Enable NoBlooks accessibility to open the notification shade")
+                return
+            }
 
             is PanelEvent.ShowFace -> when (event.face) {
                 PanelFace.RECENTS -> refreshRecents()
@@ -420,6 +439,7 @@ class OverlayPanelActions(private val context: Context) {
                             "OverlayActions",
                             "multitask ${report.mode}: ${report.started}/${report.outcomes.size} started"
                         )
+                        toast(report.note)
                     }
                 }
                 return
@@ -435,8 +455,10 @@ class OverlayPanelActions(private val context: Context) {
     fun refreshRecents() {
         scope.launch {
             val self = context.packageName
-            val live = controller.liveRecentPackages()
-            val list = recentsRepo.recents(selfPackage = self, livePackages = live)
+            val list = PerfTrace.section("NoBlooks.overlay.recents") {
+                val live = controller.liveRecentPackages()
+                recentsRepo.recents(selfPackage = self, livePackages = live)
+            }
             PanelBus.setRecents(list)
         }
     }
@@ -507,6 +529,24 @@ class OverlayPanelActions(private val context: Context) {
         openAppPackage(app.packageName)
     }
 
+    /**
+     * Opens the launcher's existing habit page. The overlay cannot reach the
+     * ViewModel, so it routes through the activity's single intent extra.
+     */
+    fun openHabits() {
+        PanelBus.dispatch(PanelEvent.Hide)
+        try {
+            context.startActivity(
+                Intent(context, com.elthon.optilauncher.MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                    .putExtra(com.elthon.optilauncher.MainActivity.EXTRA_OPEN_HABITS, true)
+            )
+        } catch (t: Throwable) {
+            Log.w("OverlayActions", "open habits failed: ${t.javaClass.simpleName}")
+            toast("Could not open NoBlooks")
+        }
+    }
+
     /** Launches [packageName]'s main activity. No-op if it has none. */
     fun openAppPackage(packageName: String) {
         PanelBus.dispatch(PanelEvent.Hide)
@@ -515,9 +555,12 @@ class OverlayPanelActions(private val context: Context) {
             if (intent != null) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(intent)
+            } else {
+                toast("That app has no launchable activity any more")
             }
         } catch (t: Throwable) {
             Log.w("OverlayActions", "open failed: ${t.javaClass.simpleName}")
+            toast("Could not open that app")
         }
     }
 
@@ -529,6 +572,7 @@ class OverlayPanelActions(private val context: Context) {
             }
             val verdict = controller.forceStop(app.packageName)
             PanelBus.setStopVerdict(verdict)
+            recentsRepo.invalidate()
             refreshRecents()
         }
     }

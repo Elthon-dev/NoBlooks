@@ -25,6 +25,8 @@ class VolumeChord(
     private val debounceMs: Long = DEFAULT_DEBOUNCE_MS
 ) {
 
+    private var upDown = false
+    private var downDown = false
     private var upDownAt = 0L
     private var downDownAt = 0L
 
@@ -38,17 +40,29 @@ class VolumeChord(
     /**
      * Records a key transition and returns true when it completes a new chord.
      *
+     * A repeated ACTION_DOWN for a key that is already down is ignored: Android
+     * sends those for a held button, and they must not move the chord window.
+     *
      * @param key [VolumeKey.UP] or [VolumeKey.DOWN].
      * @param down true for ACTION_DOWN, false for ACTION_UP.
      * @param nowMs monotonic clock reading (e.g. `SystemClock.uptimeMillis()`).
      */
     fun onKey(key: VolumeKey, down: Boolean, nowMs: Long): Boolean {
         when (key) {
-            VolumeKey.UP -> upDownAt = if (down) nowMs else 0L
-            VolumeKey.DOWN -> downDownAt = if (down) nowMs else 0L
+            VolumeKey.UP -> {
+                if (down && upDown) return false
+                upDown = down
+                upDownAt = if (down) nowMs else 0L
+            }
+
+            VolumeKey.DOWN -> {
+                if (down && downDown) return false
+                downDown = down
+                downDownAt = if (down) nowMs else 0L
+            }
         }
 
-        if (upDownAt == 0L || downDownAt == 0L) return false
+        if (!upDown || !downDown) return false
         val withinWindow = kotlin.math.abs(upDownAt - downDownAt) <= windowMs
         if (!withinWindow) return false
 

@@ -83,6 +83,9 @@ class AccessibilityPanelService : AccessibilityService() {
             KeyEvent.KEYCODE_VOLUME_DOWN -> VolumeKey.DOWN
             else -> return false
         }
+        // Held buttons synthesize repeated ACTION_DOWN events. They are not new
+        // presses, and feeding them to the chord would keep the trigger alive.
+        if (event.repeatCount > 0) return false
         val down = event.action == KeyEvent.ACTION_DOWN
         if (chord.onKey(key, down, SystemClock.uptimeMillis())) {
             Log.i(TAG, "both volume keys -> reveal panel")

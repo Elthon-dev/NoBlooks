@@ -56,6 +56,8 @@ fun SettingsPage(
     notificationListenerConnected: Boolean,
     notificationLastEventAtMs: Long,
     freeformSupported: Boolean,
+    splitSupported: Boolean,
+    lowRam: Boolean,
     pinnedCount: Int,
     appsCount: Int,
     historyDays: Int,
@@ -268,7 +270,17 @@ fun SettingsPage(
                     else lastEventLabel(notificationLastEventAtMs)
                 )
                 DiagnosticLine("Landscape", allowLandscape.toString())
+                DiagnosticLine("Split screen (request)", splitSupported.toString())
                 DiagnosticLine("Freeform windows", freeformSupported.toString())
+                DiagnosticLine("Low-memory device", lowRam.toString())
+                DiagnosticLine(
+                    "Three-app request",
+                    when {
+                        splitSupported && freeformSupported -> "Pair + floating third"
+                        splitSupported -> "Pair only (no freeform)"
+                        else -> "Unavailable"
+                    }
+                )
             }
         }
 

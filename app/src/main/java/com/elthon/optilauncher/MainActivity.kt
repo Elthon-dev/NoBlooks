@@ -94,6 +94,8 @@ class MainActivity : ComponentActivity() {
                 resumeTick = resumeTick
             )
         }
+
+        handleLaunchIntent(intent)
     }
 
     override fun onStart() {
@@ -113,11 +115,23 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        handleLaunchIntent(intent)
         // HOME was pressed again. This is the return path, so it must stay cheap:
         // the system re-probes run off the main thread and the app list comes from
         // the repository cache (package changes already invalidate it). No forced
         // usage-history scan here.
         viewModel.onReturnedHome()
+    }
+
+    /**
+     * The overlay's Habits button cannot reach the ViewModel directly (the
+     * launcher activity may not even exist), so it starts this activity with an
+     * extra. Consume it once and open the existing habit page.
+     */
+    private fun handleLaunchIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_OPEN_HABITS, false) != true) return
+        intent.removeExtra(EXTRA_OPEN_HABITS)
+        viewModel.openHabitsFromPanel()
     }
 
     override fun onResume() {
@@ -191,5 +205,10 @@ class MainActivity : ComponentActivity() {
         Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     } catch (_: Throwable) {
         false
+    }
+
+    companion object {
+        /** Set by the overlay's Habits action; consumed by [handleLaunchIntent]. */
+        const val EXTRA_OPEN_HABITS = "com.elthon.optilauncher.extra.OPEN_HABITS"
     }
 }

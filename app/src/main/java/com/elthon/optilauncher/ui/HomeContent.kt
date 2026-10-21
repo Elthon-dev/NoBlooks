@@ -44,7 +44,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.elthon.optilauncher.core.island.IslandEvent
 import com.elthon.optilauncher.core.island.IslandPage
 import com.elthon.optilauncher.core.panel.PanelEvent
-import com.elthon.optilauncher.core.panel.PanelFace
 import com.elthon.optilauncher.core.panel.RecentApp
 import com.elthon.optilauncher.ui.components.GlanceWidget
 import com.elthon.optilauncher.ui.components.SuggestionCard
@@ -137,6 +136,12 @@ fun HomeContent(
             context.packageManager.hasSystemFeature(
                 PackageManager.FEATURE_FREEFORM_WINDOW_MANAGEMENT
             )
+        }
+        // Same signal the multitask preflight uses; diagnostics and the Access
+        // chooser must not disagree with the launcher's actual decision.
+        val lowRam = remember(context) {
+            (context.getSystemService(android.content.Context.ACTIVITY_SERVICE)
+                as? android.app.ActivityManager)?.isLowRamDevice == true
         }
 
         // One surface at a time. The edge pill is bottom-anchored and can grow tall;
@@ -306,6 +311,9 @@ fun HomeContent(
                             notificationListenerConnected = ui.notificationAccess,
                             notificationLastEventAtMs = ui.notificationLastEventAtMs,
                             freeformSupported = freeformSupported,
+                            splitSupported = android.os.Build.VERSION.SDK_INT >=
+                                android.os.Build.VERSION_CODES.N,
+                            lowRam = lowRam,
                             pinnedCount = ui.settings.favorites.size,
                             appsCount = ui.apps.size,
                             historyDays = ui.habitSummary?.historyDays ?: 0,
@@ -375,12 +383,14 @@ fun HomeContent(
                     selectedPackages = ui.panel.selectedPackages,
                     lastStop = ui.panel.lastStop,
                     reducedMotion = reducedMotion,
+                    freeformSupported = freeformSupported,
+                    lowRam = lowRam,
                     onHome = { viewModel.onPanelEvent(PanelEvent.Home) },
-                    onShowRecents = { viewModel.onPanelEvent(PanelEvent.ShowFace(PanelFace.RECENTS)) },
+                    onShowRecents = { viewModel.onPanelEvent(PanelEvent.SystemRecents) },
                     onShowNotifications = {
-                        viewModel.onPanelEvent(PanelEvent.ShowFace(PanelFace.NOTIFICATIONS))
+                        viewModel.onPanelEvent(PanelEvent.SystemNotifications)
                     },
-                    onShowHabits = { viewModel.onPanelEvent(PanelEvent.ShowFace(PanelFace.HABITS)) },
+                    onShowHabits = viewModel::openHabitsFromPanel,
                     onShowMultitask = {
                         viewModel.onPanelEvent(PanelEvent.ShowMultitaskChooser)
                     },

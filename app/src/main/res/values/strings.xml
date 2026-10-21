@@ -25,4 +25,7 @@
     <string name="overlay_channel_description">Keeps the NoBlooks control panel ready to appear over any app.</string>
     <string name="overlay_notification_title">NoBlooks edge panel is ready</string>
     <string name="overlay_notification_text">Three-finger tap or both volume keys opens the panel.</string>
+
+    <!-- Quick Settings action tile. It opens the panel; it is not a toggle. -->
+    <string name="qs_tile_label">NoBlooks panel</string>
 </resources>

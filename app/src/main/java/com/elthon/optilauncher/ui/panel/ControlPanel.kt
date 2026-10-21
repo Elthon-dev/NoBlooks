@@ -66,10 +66,11 @@ import kotlinx.coroutines.delay
  * The edge pill: a compact capsule that morphs into its faces.
  *
  * The pill is the always-present form — a status strip (clock + battery) above five
- * buttons: **Home**, **Recents**, **Alerts**, **Habits**, **Access**. Home jumps home;
- * the others *morph the pill itself* into their list, each with an **×** in the
- * header that collapses back to the pill without hiding it. Access opens the window
- * requests: Split, Float, and the three-app picker.
+ * buttons: **Home**, **Recents**, **Alerts**, **Habits**, **Access**. Home performs
+ * Android's own Home action; Recents opens the real system Overview; Alerts pulls
+ * down the real notification shade; Habits opens the launcher's habit page; Access
+ * opens the window requests. Each open face has an **×** that collapses back to the
+ * pill without hiding it.
  *
  * Two behaviours are deliberate:
  *  - **It does not hide out from under a finger.** While a touch is held anywhere on
@@ -94,6 +95,8 @@ fun ControlPanel(
     selectedPackages: List<String>,
     lastStop: StopVerdict?,
     reducedMotion: Boolean,
+    freeformSupported: Boolean,
+    lowRam: Boolean,
     onHome: () -> Unit,
     onShowRecents: () -> Unit,
     onShowNotifications: () -> Unit,
@@ -301,7 +304,9 @@ fun ControlPanel(
                     )
 
                     PanelFace.MULTITASK -> MultitaskChooserBody(
-                        onPick = onShowMultitaskPicker
+                        onPick = onShowMultitaskPicker,
+                        freeformSupported = freeformSupported,
+                        lowRam = lowRam
                     )
 
                     PanelFace.MULTITASK_PICKER -> MultitaskPickerBody(
@@ -555,7 +560,9 @@ private fun AppRow(
 
 @Composable
 private fun MultitaskChooserBody(
-    onPick: (MultitaskMode) -> Unit
+    onPick: (MultitaskMode) -> Unit,
+    freeformSupported: Boolean,
+    lowRam: Boolean
 ) {
     val colors = LocalNbColors.current
     Column(
@@ -573,17 +580,30 @@ private fun MultitaskChooserBody(
         WindowModeRow(
             glyph = Glyph.WINDOW,
             title = MultitaskMode.FLOAT.title,
-            description = "A small movable window. Requires freeform support; many phones hide it.",
+            description = if (freeformSupported) {
+                "A small movable window. The system places and sizes it."
+            } else {
+                "Unavailable: this device does not expose freeform windows."
+            },
+            enabled = freeformSupported,
             onClick = { onPick(MultitaskMode.FLOAT) }
         )
         WindowModeRow(
             glyph = Glyph.GRID,
             title = MultitaskMode.TRIPLE.title,
-            description = "Pick three apps: one requested floating, two side by side.",
+            description = if (freeformSupported) {
+                "Pick three apps: two side by side, one floating."
+            } else {
+                "Pick three: the first two are requested side by side. This device " +
+                    "cannot float the third."
+            },
             onClick = { onPick(MultitaskMode.TRIPLE) }
         )
         NbText(
-            "Split and floating are requests, not guarantees — the system has the final say.",
+            buildString {
+                append("Split and floating are requests, not guarantees — the system has the final say.")
+                if (lowRam) append(" Low-memory device: Android may close one of the apps.")
+            },
             style = NbType.mono,
             color = colors.onSurfaceDim,
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
@@ -596,7 +616,8 @@ private fun WindowModeRow(
     glyph: Glyph,
     title: String,
     description: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    enabled: Boolean = true
 ) {
     val colors = LocalNbColors.current
     Row(
@@ -604,14 +625,22 @@ private fun WindowModeRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(colors.surface)
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconGlyph(glyph, colors.onSurface, Modifier.size(24.dp))
+        IconGlyph(
+            glyph,
+            if (enabled) colors.onSurface else colors.onSurfaceDim,
+            Modifier.size(24.dp)
+        )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            NbText(title, style = NbType.body, color = colors.onSurface)
+            NbText(
+                title,
+                style = NbType.body,
+                color = if (enabled) colors.onSurface else colors.onSurfaceDim
+            )
             NbText(description, style = NbType.bodySmall, color = colors.onSurfaceDim)
         }
     }
@@ -855,7 +884,7 @@ private fun NotificationRow(
 private fun StopVerdictLine(verdict: StopVerdict) {
     val colors = LocalNbColors.current
     val text = when (verdict) {
-        StopVerdict.STOPPED -> "Stopped."
+        StopVerdict.STOPPED -> "Force-stopped."
         StopVerdict.REVIVED -> "It came back — this ROM restarted it."
         StopVerdict.UNAVAILABLE -> "Shizuku not available, so nothing was stopped."
         StopVerdict.REFUSED -> "The system refused to stop it."

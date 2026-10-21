@@ -4,8 +4,8 @@ import android.content.Context
 import android.util.Log
 import com.elthon.optilauncher.core.launch.LaunchOutcome
 import com.elthon.optilauncher.core.launch.WindowMode
+import com.elthon.optilauncher.core.panel.MultitaskCapability
 import com.elthon.optilauncher.core.panel.MultitaskMode
-import kotlinx.coroutines.delay
 
 /**
  * Performs the Access face's window requests.
@@ -22,10 +22,12 @@ import kotlinx.coroutines.delay
  *            with the adjacent flag. One app can never form a pair; the old
  *            single-app request was being paired with the launcher itself or
  *            dropped, which is why the old Split looked like a no-op.
- *  - FLOAT : launch bounds, only when the device declares freeform; otherwise the
- *            planner downgrades it and the report says so.
- *  - TRIPLE: app 1 requested floating (or plain when the ROM has no freeform), then
- *            apps 2 and 3 through the same pair trampoline.
+ *  - FLOAT : launch bounds, only when the device declares freeform. Without it the
+ *            preflight blocks the request and says so — it never opens full-screen
+ *            and calls that "floating".
+ *  - TRIPLE: the pair is requested first (A+B), then C is requested floating when
+ *            freeform exists. Without freeform the pair is still requested and the
+ *            report says the third window is a manual, system-side step.
  *
  * The [MultitaskReport.note] is shown to the user, so it never claims a layout
  * that was not at most requested.
@@ -47,39 +49,55 @@ class MultitaskLauncher(context: Context) {
             )
         }
 
+        val assessment = MultitaskCapability.assess(mode, launcher.deviceCaps())
+        if (!assessment.usable) {
+            return MultitaskReport(
+                mode = mode,
+                outcomes = listOf(LaunchOutcome.Unsupported(assessment.note, WindowMode.NORMAL)),
+                note = assessment.note
+            )
+        }
+
         val outcomes = when (mode) {
             MultitaskMode.SPLIT -> pairOutcome(picked[0], picked[1])
 
-            MultitaskMode.FLOAT -> listOf(launcher.launchPackageInMode(picked[0], WindowMode.FREEFORM))
+            MultitaskMode.FLOAT ->
+                listOf(launcher.launchPackageInMode(picked[0], WindowMode.FREEFORM))
 
             MultitaskMode.TRIPLE -> {
-                val first = launcher.launchPackageInMode(
-                    picked[0],
-                    if (freeformSupported()) WindowMode.FREEFORM else WindowMode.NORMAL
-                )
-                // Let the first window settle before the pair request; the trampoline
-                // owns the beat between app 2 and the adjacent app 3.
-                delay(FLOAT_SETTLE_MS)
-                listOf(first) + pairOutcome(picked[1], picked[2])
+                if (assessment.canFloat) {
+                    // A+B form the pair; the trampoline asks for C floating after the
+                    // adjacent request, from a real Activity.
+                    pairOutcome(picked[0], picked[1], picked[2])
+                } else {
+                    // Pair first, never fake the floating third. The report explains
+                    // the system-side step that remains for C.
+                    pairOutcome(picked[0], picked[1])
+                }
             }
         }
 
         return MultitaskReport(
             mode = mode,
             outcomes = outcomes,
-            note = noteFor(mode, outcomes, freeformSupported())
+            note = noteFor(outcomes, assessment.note)
         )
     }
 
-    private fun pairOutcome(first: String, second: String): List<LaunchOutcome> {
-        val missing = listOf(first, second).any { !launchable(it) }
+    private fun pairOutcome(
+        first: String,
+        second: String,
+        third: String? = null
+    ): List<LaunchOutcome> {
+        val needed = listOfNotNull(first, second, third)
+        val missing = needed.any { !launchable(it) }
         if (missing) {
             return listOf(
                 LaunchOutcome.Unavailable("One of the chosen apps has no launchable activity any more.")
             )
         }
-        return if (startPair(first, second)) {
-            pairOutcomes()
+        return if (startPair(first, second, third)) {
+            pairOutcomes(third != null)
         } else {
             listOf(LaunchOutcome.Blocked("Android refused to start the split-pair request."))
         }
@@ -92,59 +110,39 @@ class MultitaskLauncher(context: Context) {
     }
 
     /**
-     * Hands two package names to [LaunchPairActivity]. That Activity is the caller
+     * Hands the package names to [LaunchPairActivity]. That Activity is the caller
      * the system pairs against, which the application context can never be.
      */
-    private fun startPair(first: String, second: String): Boolean = try {
-        appContext.startActivity(LaunchPairActivity.intent(appContext, first, second))
+    private fun startPair(first: String, second: String, third: String?): Boolean = try {
+        appContext.startActivity(LaunchPairActivity.intent(appContext, first, second, third))
         true
     } catch (t: Throwable) {
         Log.w(TAG, "pair trampoline refused: ${t.javaClass.simpleName}")
         false
     }
 
-    private fun pairOutcomes(): List<LaunchOutcome> = listOf(
-        LaunchOutcome.Started(WindowMode.NORMAL),
-        LaunchOutcome.Started(WindowMode.SPLIT)
-    )
+    private fun pairOutcomes(withFloatingThird: Boolean): List<LaunchOutcome> = buildList {
+        add(LaunchOutcome.Started(WindowMode.NORMAL))
+        add(LaunchOutcome.Started(WindowMode.SPLIT))
+        if (withFloatingThird) add(LaunchOutcome.Started(WindowMode.FREEFORM))
+    }
 
     private fun noteFor(
-        mode: MultitaskMode,
         outcomes: List<LaunchOutcome>,
-        freeform: Boolean
+        assessmentNote: String
     ): String {
         outcomes.filterIsInstance<LaunchOutcome.Unsupported>().firstOrNull()?.let { return it.reason }
         val blocked = outcomes.filterIsInstance<LaunchOutcome.Blocked>().firstOrNull()
         if (blocked != null) return blocked.reason
         val unavailable = outcomes.filterIsInstance<LaunchOutcome.Unavailable>().firstOrNull()
         if (unavailable != null) return unavailable.reason
-        return when (mode) {
-            MultitaskMode.SPLIT ->
-                "Two apps launched: the second was requested beside the first. " +
-                    "If they didn't pair, open Recents → Split."
-
-            MultitaskMode.FLOAT ->
-                if (freeform) {
-                    "Floating window requested; the system may place or resize it differently."
-                } else {
-                    "This ROM does not expose freeform windows, so Android opened it another way."
-                }
-
-            MultitaskMode.TRIPLE ->
-                if (freeform) {
-                    "Three apps launched: two as a split pair, one requested floating — Android has the final say."
-                } else {
-                    "Three apps launched: two as a split pair, the first full-screen — Android has the final say."
-                }
-        }
+        return assessmentNote
     }
 
     private companion object {
         private const val TAG = "MultitaskLauncher"
     }
 }
-
-private const val FLOAT_SETTLE_MS = 420L
 
 data class MultitaskReport(
     val mode: MultitaskMode,

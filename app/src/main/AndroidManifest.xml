@@ -186,6 +186,22 @@
         </service>
 
         <!--
+          Genuine Quick Settings shortcut. Tapping the tile reveals the same panel
+          as the gesture; the system owns the tile and the user adds it from the
+          Quick Settings edit screen. It has no on/off state to lie about.
+        -->
+        <service
+            android:name=".data.PanelTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_splash"
+            android:label="@string/qs_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!--
           Best-effort re-arm after a reboot. ColorOS and other ROMs may deliver this
           late or not at all; the panel simply stays off until the user opens the app
           or triggers the accessibility service again. We never claim it re-armed.

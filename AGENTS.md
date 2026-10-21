@@ -24,8 +24,8 @@ called out as **unverified** rather than claimed as working.
 
 ## Releasing updates
 
-`versionCode`/`versionName` are bumped for every installable update (`1.0.2` / code 6
-as of the motion/notification pass). The CI debug keystore is cached, so installing a
+`versionCode`/`versionName` are bumped for every installable update (`1.0.4` / code 8
+as of the real-actions/multitask pass). The CI debug keystore is cached, so installing a
 newer APK over an older one keeps working; if the cache is evicted the signature
 changes and one uninstall is required (Android cannot update across signatures).
 
@@ -134,7 +134,11 @@ changes and one uninstall is required (Android cannot update across signatures).
 - **Bursts and CPU work stay off the hot path.** Package broadcasts are collapsed
   into one forced app scan after 600ms (`PACKAGE_REFRESH_DEBOUNCE_MS`); icon maps
   commit every 24 renders; habit scoring runs on `Dispatchers.Default` and the local
-  reads on `Dispatchers.IO`, never on Main.
+  reads on `Dispatchers.IO`, never on Main. The panel's usage query is cached for 5s
+  (`RecentsRepository`) so reopening a face is not a fresh 12-hour `queryEvents` scan,
+  and the local launch log is written off-main. `data/PerfTrace.kt` adds real
+  `Trace` sections around overlay composition, recents loads and pair launches; its
+  log line is debug-only. Never present a stopwatch number that was not measured.
 - Native app icons load **progressively and in priority order** (habits, then pinned,
   then the rest), committing partial maps as they render — never one blocking pass over
   every installed app at launch. A not-yet-rendered icon is the monochrome placeholder.
@@ -168,28 +172,35 @@ changes and one uninstall is required (Android cannot update across signatures).
     the service is off (`PanelState.gestureArmed == false`) the panel is still usable by
     tapping the pill, and the header says the gesture needs enabling — it never claims
     the gesture is live.
-  - **Recents / Alerts / Habits buttons open the pill's own lists** (not the system
-    overview or shade). The SystemRecents/SystemNotifications events remain in the
-    contract for the fallback path but are not bound to the pill buttons.
+  - **Recents / Alerts / Habits are real actions.** Recents performs
+    `GLOBAL_ACTION_RECENTS` (falling back to `CATEGORY_APP_RECENTS` on ROMs that resolve
+    it) and never substitutes a package-level list; Alerts performs
+    `GLOBAL_ACTION_NOTIFICATIONS` — the real shade — and never opens a custom
+    notification page; Habits hides the panel and opens the existing in-app habit page
+    (the overlay routes through `MainActivity`'s `EXTRA_OPEN_HABITS`). Home performs
+    `GLOBAL_ACTION_HOME`, then a `CATEGORY_HOME` intent; it never self-forwards over the
+    user's chosen home app. When an action cannot be dispatched, the panel says so and
+    stays put.
+  - A **Quick Settings tile** (`data/PanelTileService`, `BIND_QUICK_SETTINGS_TILE`) is
+    the third reveal trigger. It is an action, not a toggle, and starts the same panel;
+    no on/off state is claimed.
   - **Force-stopping another app** is impossible through normal APIs; it goes through
     Shizuku (`am force-stop`, shell uid 2000). The result is a `StopVerdict`, not a
     boolean: `STOPPED` / `REVIVED` (the ROM restarted it) / `UNAVAILABLE` / `REFUSED` /
     `UNVERIFIED`. Without Shizuku the row opens the app-info page instead. Never report
-    a bare "stopped".
-  - The **recents list** is an MRU package list from `UsageStats` `ACTIVITY_RESUMED`
-    (plus live-process corroboration from `dumpsys activity recents` via Shizuku), not
-    the system Overview stack — package-level only, no task ids or thumbnails.
-  - The **habits list** in the in-app panel is the real `HabitEngine` ranking
-    (`LauncherUiState.panelHabits`, derived from `habitSummary` + installed labels). The
-    overlay has no habit engine, so it reuses the usage repository's MRU list — real
-    usage, but an approximation, never fabricated.
-  - **Notifications** need `NotificationListenerService` (special access); the panel
-    shows a "grant access" state until it is present, with a button that deep-links to
-    this app's own listener entry (`ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS` on
-    API 30+, then the listener list, then the app notification page). This matters
-    because ColorOS and friends hide the entry from the special-access list. Inline
-    reply via `RemoteInput` is best-effort — the UI says "Reply sent", never
-    "delivered".
+    a bare "stopped" (the UI says "Force-stopped.").
+  - The retained **usage-list model** (an MRU package list from `UsageStats`
+    `ACTIVITY_RESUMED`, plus live-process corroboration from `dumpsys activity recents`
+    via Shizuku) is not bound to the Recents button any more. It is package-level only,
+    has no task ids or thumbnails, and must never be presented as the system Overview.
+  - The retained **panel habit list** is the real `HabitEngine` ranking
+    (`LauncherUiState.panelHabits`). The Habits *button*, however, opens the full in-app
+    habit page, not this compact face.
+  - The retained **notification-listener feature** is legacy from the old Alerts face and
+    is not part of the Alerts path any more. Alerts opens the real shade; the listener
+    code and its Settings rows remain only because removing the special-access
+    diagnostics wholesale is out of scope. Inline reply via `RemoteInput` is best-effort
+    — the UI says "Reply sent", never "delivered".
   - **Granted is not the same as bound.** On ColorOS/MIUI the listener can be killed
     with the process while the grant stays on, which used to read as "access off" in
     the Alerts face. The bridge carries a heartbeat (`lastEventAtMs`), the Alerts face
@@ -206,16 +217,21 @@ changes and one uninstall is required (Android cannot update across signatures).
     still ignore every request; Settings points at **App info → Auto-start +
     background activity**, which is the verified ColorOS workaround. Never claim the
     listener is receiving when only the grant is known.
-  - **Access / multitasking** is a request, never a promise. **Split now asks for two
+  - **Access / multitasking** is a request, never a promise.
+    `core/panel/MultitaskCapability` is the preflight both the chooser and `data/MultitaskLauncher`
+    read: Float is **blocked** when the device lacks
+    `FEATURE_FREEFORM_WINDOW_MANAGEMENT` (the request is not made, and nothing is
+    silently opened full-screen); Triple is **partial** without freeform (the A+B pair
+    is requested, the floating third is an explicit manual step) and **ready** only
+    with freeform. Low-RAM is a warning, never a silent downgrade. **Split asks for two
     apps** — a single adjacent launch has nothing to pair with (the flag pairs the
     target with the *caller's* window, and the application context has no task), which
     is why it used to open beside the launcher or do nothing. `data/LaunchPairActivity`
     is an invisible trampoline with its own task affinity: it launches app 1 normally,
-    waits one beat (700ms, inside the background-launch grace window), then launches
-    app 2 from a real Activity with `FLAG_ACTIVITY_LAUNCH_ADJACENT`. **Float** uses
-    `ActivityOptions.setLaunchBounds` only when the device declares
-    `FEATURE_FREEFORM_WINDOW_MANAGEMENT`; **Triple** requests app 1 floating (plain
-    when freeform is absent), then apps 2+3 through the same pair trampoline.
+    waits for the system's own `onStop` signal that app 1 is covering it (with a guarded
+    fallback timer, not a fixed sleep as the primary mechanism), then launches app 2
+    from a real Activity with `FLAG_ACTIVITY_LAUNCH_ADJACENT`. **Triple** requests the
+    A+B pair first, then C floating through the same trampoline when freeform exists.
     `setLaunchWindowingMode` is hidden API and must not be used/reflected.
     `core/panel/MultitaskMode` caps the picker at the required count (2 for split,
     3 for triple), ticks are checkmarked on the right, and `PanelStateTest` covers the
@@ -234,9 +250,11 @@ changes and one uninstall is required (Android cannot update across signatures).
     system actions. The overlay is a `TYPE_APPLICATION_OVERLAY` window that stays mounted
     for the service's life; visibility and touchability track the shared state
     (`VIEW` alpha/translation + `View.GONE` + `FLAG_NOT_TOUCHABLE`), because re-adding a
-    `ComposeView` breaks its composition. Show is a 180ms fade+16dp rise; hide fades for
-    140ms and only then drops to `GONE` (cancel-safe, and `ValueAnimator.areAnimatorsEnabled()`
-    wins). While the launcher activity is started (`PanelBus.appForeground`) the
+    `ComposeView` breaks its composition. It is **pre-mounted at service start**, parked
+    and transparent, so the first reveal does not pay for composition. Show is a 180ms
+    fade+16dp rise; hide fades for 140ms and only then drops to `GONE` (cancel-safe, and
+    `ValueAnimator.areAnimatorsEnabled()` wins). While the launcher activity is started
+    (`PanelBus.appForeground`) the
     overlay is suppressed — the in-app panel already owns that screen, and two stacked
     panels/scrims are never allowed. The boot receiver *arms* the service without
     revealing the panel.
@@ -254,8 +272,10 @@ changes and one uninstall is required (Android cannot update across signatures).
     service) and **both volume keys together** (best-effort only — Android already uses
     hold-both-volume as the global accessibility shortcut, and only one service may filter
     key events). The chord timing is pure logic in `core/panel/VolumeChord.kt`, tested in
-    `VolumeChordTest`; the service observes the keys and **never swallows them**, so
-    volume keeps working. Reveal adds a short guarded vibration tick.
+    `VolumeChordTest`; key-repeat `ACTION_DOWN` events are ignored (both in the service
+    and by the chord's own state), and the service **never swallows** keys, so volume
+    keeps working. Reveal adds a short guarded vibration tick. The Quick Settings tile is
+    the third trigger.
 - **The ColorOS/OxygenOS return delay is a system behaviour, not ours.** On
   OPPO/OnePlus/Realme ROMs, third-party launchers show a blank-wallpaper stretch when
   swiping Home, with gesture navigation only (3-button is instant), and it affects

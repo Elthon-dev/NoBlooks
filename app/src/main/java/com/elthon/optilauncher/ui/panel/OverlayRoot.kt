@@ -7,7 +7,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalContext
 import com.elthon.optilauncher.core.panel.PanelEvent
-import com.elthon.optilauncher.core.panel.PanelFace
 import com.elthon.optilauncher.core.theme.LauncherTheme
 import com.elthon.optilauncher.data.NotificationAccess
 import com.elthon.optilauncher.data.NotificationBridge
@@ -52,6 +51,17 @@ fun OverlayRoot(actions: OverlayPanelActions) {
         ) == 0f
     }
 
+    // Match the in-app chooser and the MultitaskLauncher preflight.
+    val freeformSupported = remember(context) {
+        context.packageManager.hasSystemFeature(
+            android.content.pm.PackageManager.FEATURE_FREEFORM_WINDOW_MANAGEMENT
+        )
+    }
+    val lowRam = remember(context) {
+        (context.getSystemService(android.content.Context.ACTIVITY_SERVICE)
+            as? android.app.ActivityManager)?.isLowRamDevice == true
+    }
+
     NoBlooksTheme(theme = LauncherTheme.fallback()) {
         ControlPanel(
             visible = panel.visible,
@@ -66,11 +76,13 @@ fun OverlayRoot(actions: OverlayPanelActions) {
             selectedPackages = panel.selectedPackages,
             lastStop = panel.lastStop,
             reducedMotion = reducedMotion,
+            freeformSupported = freeformSupported,
+            lowRam = lowRam,
             allowReply = false,
             onHome = { actions.dispatch(PanelEvent.Home) },
-            onShowRecents = { actions.dispatch(PanelEvent.ShowFace(PanelFace.RECENTS)) },
-            onShowNotifications = { actions.dispatch(PanelEvent.ShowFace(PanelFace.NOTIFICATIONS)) },
-            onShowHabits = { actions.dispatch(PanelEvent.ShowFace(PanelFace.HABITS)) },
+            onShowRecents = { actions.dispatch(PanelEvent.SystemRecents) },
+            onShowNotifications = { actions.dispatch(PanelEvent.SystemNotifications) },
+            onShowHabits = { actions.openHabits() },
             onShowMultitask = { actions.dispatch(PanelEvent.ShowMultitaskChooser) },
             onShowMultitaskPicker = { actions.dispatch(PanelEvent.ShowMultitaskPicker(it)) },
             onToggleMultitaskSelection = { actions.dispatch(PanelEvent.ToggleMultitaskSelection(it)) },

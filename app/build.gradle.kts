@@ -12,8 +12,8 @@ android {
         applicationId = "com.elthon.optilauncher"
         minSdk = 29
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.0.3"
+        versionCode = 8
+        versionName = "1.0.4"
 
         // Exposed at runtime so the diagnostics page can state the real build contract
         // instead of guessing from Build.VERSION.
