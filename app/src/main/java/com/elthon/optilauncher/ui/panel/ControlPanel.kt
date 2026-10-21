@@ -123,8 +123,13 @@ fun ControlPanel(
     val landscape = configuration.screenHeightDp < configuration.screenWidthDp
 
     var contentHeightPx by remember { mutableIntStateOf(0) }
-    var showContent by remember { mutableStateOf(visible) }
-    var animateOpen by remember { mutableFloatStateOf(if (visible) 1f else 0f) }
+
+    // Always start from nothing and mount the first frame invisible. The launcher can
+    // compose this surface with the panel already visible (returning Home while the
+    // overlay pill is up); snapping straight to the open state is the one case where
+    // the reveal reads as a pop. The effect below owns the rise for every mount.
+    var showContent by remember { mutableStateOf(false) }
+    var animateOpen by remember { mutableFloatStateOf(0f) }
 
     // The pill is "open" whenever it is visible; the *face* controls how far it grows.
     val progressState = animateFloatAsState(

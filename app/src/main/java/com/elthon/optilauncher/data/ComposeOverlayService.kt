@@ -45,6 +45,8 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
 
     private var windowManager: WindowManager? = null
     private var overlayView: android.view.View? = null
+    private var windowTargetVisible = false
+    private var hideToken = 0
 
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
     override val savedStateRegistry: SavedStateRegistry
@@ -127,11 +129,62 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
 
     // ------------------------------------------------------------------ window
 
-    /** Shows or hides the mounted window without disturbing its composition. */
+    /**
+     * Shows or hides the mounted window without disturbing its composition.
+     *
+     * The window is full-screen and stays mounted so the ComposeView's composition
+     * survives; a raw `VISIBLE`/`GONE` switch therefore reads as a pop. Instead the
+     * view fades and rises a few dp on the way in, and fades out before it is set to
+     * `GONE` (the documented crossfade pattern: animate alpha, then drop visibility
+     * on the animation's end). The ROM's animator scale wins — when animators are
+     * disabled the swap is instant rather than forced motion.
+     */
     private fun setWindowVisible(visible: Boolean) {
         val view = overlayView ?: return
-        val wanted = if (visible) android.view.View.VISIBLE else android.view.View.GONE
-        if (view.visibility != wanted) view.visibility = wanted
+        if (windowTargetVisible == visible) return
+        windowTargetVisible = visible
+        hideToken++
+        val token = hideToken
+        view.animate().cancel()
+
+        if (!android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            view.alpha = 1f
+            view.translationY = 0f
+            view.visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+            return
+        }
+
+        val rise = 16 * resources.displayMetrics.density
+        if (visible) {
+            if (view.visibility != android.view.View.VISIBLE) {
+                view.alpha = 0f
+                view.translationY = rise
+                view.visibility = android.view.View.VISIBLE
+            }
+            view.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(SHOW_MS)
+                .setInterpolator(SHOW_CURVE)
+                .start()
+        } else {
+            if (view.visibility != android.view.View.VISIBLE) return
+            view.animate()
+                .alpha(0f)
+                .translationY(rise * 0.5f)
+                .setDuration(HIDE_MS)
+                .setInterpolator(HIDE_CURVE)
+                .withEndAction {
+                    // A reveal that raced the fade-out owns the view again; only the
+                    // last hide may park it.
+                    if (hideToken == token) {
+                        view.visibility = android.view.View.GONE
+                        view.alpha = 1f
+                        view.translationY = 0f
+                    }
+                }
+                .start()
+        }
     }
 
     /** Toggles whether the overlay window accepts touches. */
@@ -177,9 +230,14 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
         }
 
         try {
+            // Start parked and transparent: the bus observer animates the first
+            // reveal in, exactly like every later one.
+            view.visibility = android.view.View.GONE
+            view.alpha = 0f
             wm.addView(view, lp)
             overlayView = view
             params = lp
+            windowTargetVisible = false
         } catch (t: Throwable) {
             // The classic ColorOS silent refusal surfaces here as a security error.
             Log.w(TAG, "addView refused: ${t.javaClass.simpleName}")
@@ -191,6 +249,9 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
         val view = overlayView ?: return
         overlayView = null
         params = null
+        windowTargetVisible = false
+        hideToken++
+        view.animate().cancel()
         try {
             windowManager?.removeView(view)
         } catch (t: Throwable) {
@@ -248,6 +309,12 @@ class ComposeOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewM
         private const val CHANNEL_ID = "noblocks_overlay"
         private const val NOTIFICATION_ID = 4711
         private const val MAIN_ACTIVITY = "com.elthon.optilauncher.MainActivity"
+
+        /** Window reveal: short emphasized fade + rise. Matches `NbMotion.Standard`. */
+        private const val SHOW_MS = 180L
+        private const val HIDE_MS = 140L
+        private val SHOW_CURVE = android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f)
+        private val HIDE_CURVE = android.view.animation.PathInterpolator(0.3f, 0f, 0.8f, 0.15f)
 
         const val ACTION_SHOW = "com.elthon.optilauncher.overlay.SHOW"
         const val ACTION_HIDE = "com.elthon.optilauncher.overlay.HIDE"
