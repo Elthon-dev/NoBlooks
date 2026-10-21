@@ -106,23 +106,20 @@ object LaunchPlanner {
                     note = "Freeform bounds are applied best-effort; the device may place the window differently."
                 )
                 else -> {
-                    // Honest ladder: freeform -> split (if usable) -> plain launch.
-                    val splitUsable = caps.supportsSplitScreen && target.resizable
+                    // Honest ladder: freeform is the only mode that can actually
+                    // produce a movable window here. A single adjacent launch is not
+                    // a substitute — it has no pair to sit beside and usually gets
+                    // dropped — so the fallback is a plain, predictable launch.
                     LaunchPlan(
                         target = target,
-                        mode = if (splitUsable) WindowMode.SPLIT else WindowMode.NORMAL,
-                        flags = if (splitUsable) {
-                            IntentFlags.FLAG_ACTIVITY_NEW_TASK or
-                                IntentFlags.FLAG_ACTIVITY_MULTIPLE_TASK or
-                                IntentFlags.FLAG_ACTIVITY_LAUNCH_ADJACENT
-                        } else {
-                            IntentFlags.FLAG_ACTIVITY_NEW_TASK or IntentFlags.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
-                        },
-                        adjacent = splitUsable,
+                        mode = WindowMode.NORMAL,
+                        flags = IntentFlags.FLAG_ACTIVITY_NEW_TASK or
+                            IntentFlags.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
+                        adjacent = false,
                         downgradedFrom = WindowMode.FREEFORM,
                         note = if (!caps.supportsFreeform) {
-                            "This device does not expose freeform (floating) windowing for other apps. " +
-                                "Used ${if (splitUsable) "split screen" else "a normal launch"} instead."
+                            "This device does not expose freeform (floating) windows for other apps, " +
+                                "so the app was opened full-screen."
                         } else {
                             "This app cannot be resized, so it was opened normally."
                         }

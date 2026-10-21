@@ -44,7 +44,7 @@ enum class PanelFace {
  * best-effort launches. The UI says so; nothing here pretends otherwise.
  */
 enum class MultitaskMode(val requiredApps: Int, val title: String, val action: String) {
-    SPLIT(1, "Split screen", "Open in split"),
+    SPLIT(2, "Split screen", "Open side by side"),
     FLOAT(1, "Floating window", "Open floating"),
     TRIPLE(3, "Three apps at once", "Launch all three")
 }

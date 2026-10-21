@@ -567,7 +567,7 @@ private fun MultitaskChooserBody(
         WindowModeRow(
             glyph = Glyph.SPLIT,
             title = MultitaskMode.SPLIT.title,
-            description = "Places the app beside what is already open, when Android allows it.",
+            description = "Pick two apps; the second is launched beside the first.",
             onClick = { onPick(MultitaskMode.SPLIT) }
         )
         WindowModeRow(
@@ -751,8 +751,8 @@ private fun NotificationsBody(
         PanelEmpty(
             "Listener not bound",
             "Access is granted, but Android isn't delivering events right now. " +
-                "Reconnect; if it stays silent, allow Auto-start in App info.",
-            actionLabel = "Reconnect listener",
+                "Force a reconnect; if it stays silent, allow Auto-start in App info.",
+            actionLabel = "Force reconnect",
             onAction = onRebind
         )
         return

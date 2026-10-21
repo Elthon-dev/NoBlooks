@@ -50,7 +50,8 @@ class AppLauncher(context: Context) {
     private fun start(
         target: LaunchTarget,
         requested: WindowMode,
-        checkResolvable: Boolean
+        checkResolvable: Boolean,
+        starter: Context = appContext
     ): LaunchOutcome {
         val caps = deviceCaps()
         val plan = LaunchPlanner.plan(target, requested, caps)
@@ -82,7 +83,7 @@ class AppLauncher(context: Context) {
         val options = if (plan.mode == WindowMode.FREEFORM) freeformBounds() else null
 
         return try {
-            appContext.startActivity(intent, options)
+            starter.startActivity(intent, options)
             LaunchPlanner.outcomeForPlan(plan)
         } catch (error: Throwable) {
             LaunchPlanner.outcomeFor(error, plan)
@@ -132,7 +133,11 @@ class AppLauncher(context: Context) {
      * the returned [LaunchOutcome] says exactly which request was made and whether
      * the device forced a downgrade.
      */
-    fun launchPackageInMode(packageName: String, requested: WindowMode): LaunchOutcome {
+    fun launchPackageInMode(
+        packageName: String,
+        requested: WindowMode,
+        starter: Context = appContext
+    ): LaunchOutcome {
         val launchIntent = try {
             pm.getLaunchIntentForPackage(packageName)
         } catch (error: Throwable) {
@@ -153,7 +158,8 @@ class AppLauncher(context: Context) {
         return start(
             target = LaunchTarget(component.packageName, component.className),
             requested = requested,
-            checkResolvable = false
+            checkResolvable = false,
+            starter = starter
         )
     }
 

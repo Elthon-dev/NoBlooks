@@ -119,6 +119,23 @@
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <!--
+          Invisible trampoline for split-screen pairs. App 1 is launched normally,
+          then app 2 is asked for with FLAG_ACTIVITY_LAUNCH_ADJACENT from this real
+          Activity — the adjacent flag pairs with the caller, and the application
+          context has no task to pair with. Its own taskAffinity keeps it out of
+          the launcher's task; the activity has no UI, never appears in recents,
+          and finishes itself after the pair request. It deliberately does
+          NOT use noHistory: the system would finish it while it is stopped behind
+          app 1 and cancel the delayed adjacent launch.
+        -->
+        <activity
+            android:name=".data.LaunchPairActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="com.elthon.optilauncher.pair"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!--
           Notification reader for the control panel. Bound by the system only after
           the user grants notification access; until then it is simply never started
           and the panel shows an "access required" state. It never posts anything.

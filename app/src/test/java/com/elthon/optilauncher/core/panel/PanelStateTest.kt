@@ -204,12 +204,27 @@ class PanelStateTest {
     }
 
     @Test
-    fun `single-app modes are ready after one pick`() {
-        val split = PanelState()
+    fun `float is ready after one pick`() {
+        val float = PanelState()
+            .reduce(PanelEvent.ShowMultitaskPicker(MultitaskMode.FLOAT))
+            .reduce(PanelEvent.ToggleMultitaskSelection("a"))
+        assertTrue(float.selectionReady)
+        assertEquals(1, float.selectedPackages.size)
+    }
+
+    @Test
+    fun `split needs two picks because one app cannot form a pair`() {
+        val one = PanelState()
             .reduce(PanelEvent.ShowMultitaskPicker(MultitaskMode.SPLIT))
             .reduce(PanelEvent.ToggleMultitaskSelection("a"))
-        assertTrue(split.selectionReady)
-        assertEquals(1, split.selectedPackages.size)
+        assertFalse(one.selectionReady)
+        assertEquals(1, one.selectedPackages.size)
+
+        val two = one.reduce(PanelEvent.ToggleMultitaskSelection("b"))
+        assertTrue(two.selectionReady)
+        assertEquals(listOf("a", "b"), two.selectedPackages)
+
+        assertEquals(two, two.reduce(PanelEvent.ToggleMultitaskSelection("c")))
     }
 
     @Test

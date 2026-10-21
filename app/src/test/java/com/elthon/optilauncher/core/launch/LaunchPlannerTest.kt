@@ -47,14 +47,15 @@ class LaunchPlannerTest {
     }
 
     @Test
-    fun `freeform falls back to split before plain launch`() {
+    fun `freeform never fakes a split — it falls back to a plain launch`() {
         val plan = LaunchPlanner.plan(
             resizable,
             WindowMode.FREEFORM,
             DeviceCaps(supportsSplitScreen = true, supportsFreeform = false)
         )
-        assertEquals(WindowMode.SPLIT, plan.mode)
+        assertEquals(WindowMode.NORMAL, plan.mode)
         assertEquals(WindowMode.FREEFORM, plan.downgradedFrom)
+        assertFalse(plan.adjacent)
     }
 
     @Test
