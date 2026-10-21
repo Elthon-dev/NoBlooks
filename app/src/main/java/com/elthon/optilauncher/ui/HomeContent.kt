@@ -131,6 +131,14 @@ fun HomeContent(
                 .sortedBy { it.label.lowercase() }
         }
 
+        // Honest capability line for the Access face: Float needs freeform support,
+        // and this is the exact feature flag the launcher checks before requesting it.
+        val freeformSupported = remember(context) {
+            context.packageManager.hasSystemFeature(
+                PackageManager.FEATURE_FREEFORM_WINDOW_MANAGEMENT
+            )
+        }
+
         // One surface at a time. The edge pill is bottom-anchored and can grow tall;
         // it must not sit on top of the island's capsule or its suggestion chip. When
         // it appears, the island collapses (behaviour) and recedes under the pill's
@@ -297,6 +305,7 @@ fun HomeContent(
                             notificationAccessEnabled = ui.notificationAccessGranted,
                             notificationListenerConnected = ui.notificationAccess,
                             notificationLastEventAtMs = ui.notificationLastEventAtMs,
+                            freeformSupported = freeformSupported,
                             pinnedCount = ui.settings.favorites.size,
                             appsCount = ui.apps.size,
                             historyDays = ui.habitSummary?.historyDays ?: 0,

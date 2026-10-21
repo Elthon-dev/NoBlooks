@@ -24,10 +24,10 @@ called out as **unverified** rather than claimed as working.
 
 ## Releasing updates
 
-`versionCode`/`versionName` are bumped for every installable update (`1.0.1` / code 5
-as of the Access pass). The CI debug keystore is cached, so installing a newer APK
-over an older one keeps working; if the cache is evicted the signature changes and
-one uninstall is required (Android cannot update across signatures).
+`versionCode`/`versionName` are bumped for every installable update (`1.0.2` / code 6
+as of the motion/notification pass). The CI debug keystore is cached, so installing a
+newer APK over an older one keeps working; if the cache is evicted the signature
+changes and one uninstall is required (Android cannot update across signatures).
 
 ## Repo
 
@@ -59,6 +59,14 @@ one uninstall is required (Android cannot update across signatures).
   cannot cause a collision. The panel's bottom is clamped to the IME while the keyboard
   is up, so the app grid never continues underneath it, with 58dp reserved for the
   keyboard action row.
+- **One surface at a time.** The edge pill is bottom-anchored and can grow tall, so
+  while `panel.visible` the island is collapsed (behaviour) and recedes — alpha to 0
+  plus a short slide toward the left edge, draw-phase only, snap under reduced motion
+  — and its suggestion chip fades with it. The home then reads as *instrument +
+  panel*; the pill never sits on top of a live capsule or chip. The pill's own scrim
+  already owns input for the screen. The in-app pill **always mounts from zero** and
+  animates its own entrance (40px rise + content alpha); composing it while already
+  visible must not snap it open.
 - The launcher is **dark by default** (`SettingsState.themeMode = DARK`); `AUTO` is
   still available and follows measured wallpaper luminance.
 - **Portrait by default.** `SettingsState.allowLandscape = false` locks the activity to
@@ -182,6 +190,16 @@ one uninstall is required (Android cannot update across signatures).
     because ColorOS and friends hide the entry from the special-access list. Inline
     reply via `RemoteInput` is best-effort — the UI says "Reply sent", never
     "delivered".
+  - **Granted is not the same as bound.** On ColorOS/MIUI the listener can be killed
+    with the process while the grant stays on, which used to read as "access off" in
+    the Alerts face. The bridge carries a heartbeat (`lastEventAtMs`), the Alerts face
+    distinguishes *grant* from *connection* and offers `NotificationAccess.rebind()`
+    — `requestRebind(ComponentName)` is the only supported reconnect call and fails
+    without a grant. Returning Home retries at most once a minute, and
+    `MY_PACKAGE_REPLACED`/boot receivers rebind and re-arm the panel. The ROM may
+    still ignore the rebind; Settings points at **App info → Auto-start + background
+    activity**, which is the verified ColorOS workaround. Never claim the listener is
+    receiving when only the grant is known.
   - **Access / multitasking** is a request, never a promise. **Split** uses
     `FLAG_ACTIVITY_LAUNCH_ADJACENT` (public since API 24; on Android 12L+ a full-screen
     activity can enter split); **Float** uses `ActivityOptions.setLaunchBounds` only
@@ -203,8 +221,10 @@ one uninstall is required (Android cannot update across signatures).
     `LifecycleService` that owns the process-wide `data/PanelBus` state and the same
     system actions. The overlay is a `TYPE_APPLICATION_OVERLAY` window that stays mounted
     for the service's life; visibility and touchability track the shared state
-    (`View.GONE` + `FLAG_NOT_TOUCHABLE`), because re-adding a `ComposeView` breaks its
-    composition. While the launcher activity is started (`PanelBus.appForeground`) the
+    (`VIEW` alpha/translation + `View.GONE` + `FLAG_NOT_TOUCHABLE`), because re-adding a
+    `ComposeView` breaks its composition. Show is a 180ms fade+16dp rise; hide fades for
+    140ms and only then drops to `GONE` (cancel-safe, and `ValueAnimator.areAnimatorsEnabled()`
+    wins). While the launcher activity is started (`PanelBus.appForeground`) the
     overlay is suppressed — the in-app panel already owns that screen, and two stacked
     panels/scrims are never allowed. The boot receiver *arms* the service without
     revealing the panel.

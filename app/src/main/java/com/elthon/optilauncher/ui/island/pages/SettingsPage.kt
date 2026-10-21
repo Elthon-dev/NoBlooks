@@ -55,6 +55,7 @@ fun SettingsPage(
     notificationAccessEnabled: Boolean,
     notificationListenerConnected: Boolean,
     notificationLastEventAtMs: Long,
+    freeformSupported: Boolean,
     pinnedCount: Int,
     appsCount: Int,
     historyDays: Int,
@@ -267,6 +268,7 @@ fun SettingsPage(
                     else lastEventLabel(notificationLastEventAtMs)
                 )
                 DiagnosticLine("Landscape", allowLandscape.toString())
+                DiagnosticLine("Freeform windows", freeformSupported.toString())
             }
         }
 
