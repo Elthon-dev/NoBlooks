@@ -149,6 +149,10 @@ fun FloatingIsland(
     // the panel. A tap on the island while open closes the panel instead.
     controlOpen: Boolean = false,
     onControlDismiss: () -> Unit = {},
+    // While the edge pill is open the island recedes: it is bottom-anchored's
+    // neighbour, not a second layer. The island's own scrim belongs to its expanded
+    // face only; the pill brings the screen's scrim with it.
+    panelOpen: Boolean = false,
     suggestion: (@Composable () -> Unit)? = null,
     pageContent: @Composable (IslandPage) -> Unit
 ) {
@@ -184,6 +188,20 @@ fun FloatingIsland(
         if (state.isExpanded) backPreview.floatValue = 0f
     }
 
+    // The edge pill owns the screen while it is open: the island (and its suggestion
+    // chip) glide toward the left edge and fade under the pill's scrim instead of
+    // being covered mid-sentence. Read only in the draw phase, so the recede never
+    // recomposes the island or its page.
+    val panelRecede = animateFloatAsState(
+        targetValue = if (panelOpen) 1f else 0f,
+        animationSpec = when {
+            reducedMotion -> tween(0)
+            panelOpen -> NbMotion.exitSpring
+            else -> NbMotion.enterSpring
+        },
+        label = "islandRecede"
+    )
+
     BoxWithConstraints(modifier.fillMaxSize()) {
         val screenWidth = maxWidth
         val screenHeight = maxHeight
@@ -210,6 +228,11 @@ fun FloatingIsland(
         Box(
             Modifier
                 .fillMaxSize()
+                .graphicsLayer {
+                    val recede = panelRecede.value.coerceIn(0f, 1f)
+                    alpha = 1f - recede
+                    translationX = -NbDim.PillWidth.toPx() * 0.4f * recede
+                }
                 .imePadding()
                 .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
         ) {

@@ -131,6 +131,15 @@ fun HomeContent(
                 .sortedBy { it.label.lowercase() }
         }
 
+        // One surface at a time. The edge pill is bottom-anchored and can grow tall;
+        // it must not sit on top of the island's capsule or its suggestion chip. When
+        // it appears, the island collapses (behaviour) and recedes under the pill's
+        // scrim (visual) — the home then reads as instrument + panel, not a pile.
+        val panelOpen = ui.panel.visible
+        LaunchedEffect(panelOpen) {
+            if (panelOpen && ui.island.isExpanded) viewModel.onEvent(IslandEvent.Collapse)
+        }
+
         // Returning from an app: dip and fade the whole home screen once per resume
         // bump. The tap that left the launcher is the user's, so the *return* is the
         // only moment we control — a short alpha ramp there makes the hand-off read
@@ -182,6 +191,7 @@ fun HomeContent(
                 message = ui.message,
                 instrumentHeightPx = instrumentHeightPx,
                 controlOpen = controlOpen,
+                panelOpen = panelOpen,
                 onControlDismiss = { controlOpen = false },
                 // While the control centre is open the island is locked collapsed:
                 // expansion events are swallowed so the two surfaces can never be
